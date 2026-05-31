@@ -1,5 +1,6 @@
 package com.llm.gateway.llm_gateway.config;
 
+import com.llm.gateway.llm_gateway.dto.LlmProvider;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
@@ -7,10 +8,10 @@ import java.util.Map;
 
 @Data
 @Component
-@ConfigurationProperties(prefix = "llm.providers")
+@ConfigurationProperties(prefix = "llm")
 public class LlmProviderProperties {
 
-    private Map<String, ProviderConfig> providers;
+    private Map<LlmProvider, ProviderConfig> providers;
 
     @Data
     public static class ProviderConfig {

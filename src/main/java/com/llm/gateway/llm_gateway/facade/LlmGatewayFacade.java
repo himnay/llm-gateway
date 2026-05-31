@@ -16,6 +16,8 @@ import io.micrometer.tracing.Tracer;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -45,19 +47,19 @@ public class LlmGatewayFacade {
     private final PromptCacheService cacheService;
     private final LlmMetricsService metricsService;
     private final ObservationRegistry observationRegistry;
-    private final Tracer tracer;
+    @Autowired(required = false)
+    @Nullable
+    private Tracer tracer;
 
     public LlmGatewayFacade(List<LlmServiceProvider> providerList,
                              PromptSanitizer sanitizer,
                              PromptCacheService cacheService,
                              LlmMetricsService metricsService,
-                             ObservationRegistry observationRegistry,
-                             Tracer tracer) {
+                             ObservationRegistry observationRegistry) {
         this.sanitizer           = sanitizer;
         this.cacheService        = cacheService;
         this.metricsService      = metricsService;
         this.observationRegistry = observationRegistry;
-        this.tracer              = tracer;
         this.providers           = providerList.stream()
                 .collect(Collectors.toMap(
                         p -> p.getProviderName().toLowerCase(),
@@ -126,12 +128,14 @@ public class LlmGatewayFacade {
             LlmResponse response;
             try {
                 // ── 5. Enrich MDC with trace IDs ──────────────────────────────
-                String traceId = "unknown";
-                String spanId  = "unknown";
-                Span currentSpan = tracer.currentSpan();
-                if (currentSpan != null) {
-                    traceId = currentSpan.context().traceId();
-                    spanId  = currentSpan.context().spanId();
+                String traceId = MDC.get("traceId") != null ? MDC.get("traceId") : "unknown";
+                String spanId  = MDC.get("spanId")  != null ? MDC.get("spanId")  : "unknown";
+                if (tracer != null) {
+                    Span currentSpan = tracer.currentSpan();
+                    if (currentSpan != null) {
+                        traceId = currentSpan.context().traceId();
+                        spanId  = currentSpan.context().spanId();
+                    }
                 }
                 MDC.put("traceId", traceId);
                 MDC.put("spanId",  spanId);

@@ -140,6 +140,18 @@ llm:
   chat:
     memory:
       ttl-hours: ${LLM_CHAT_MEMORY_TTL_HOURS:24}
+  guardrails:
+    pii-redaction:
+      enabled: ${LLM_PII_REDACTION_ENABLED:true}
+    toxicity:
+      enabled: ${LLM_TOXICITY_FILTER_ENABLED:true}
+    topic-filter:
+      enabled: ${LLM_TOPIC_FILTER_ENABLED:true}
+      blocked-topics: ${LLM_BLOCKED_TOPICS:}   # comma-separated list of restricted topics
+    response-format:
+      enabled: ${LLM_RESPONSE_FORMAT_ENABLED:true}
+      min-length: ${LLM_RESPONSE_MIN_LENGTH:10}
+      max-length: ${LLM_RESPONSE_MAX_LENGTH:50000}
   security:
     sanitization:
       enabled: ${LLM_SANITIZATION_ENABLED:true}

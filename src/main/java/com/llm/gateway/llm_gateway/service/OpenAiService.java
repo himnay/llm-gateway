@@ -1,6 +1,6 @@
 package com.llm.gateway.llm_gateway.service;
 
-import com.llm.gateway.llm_gateway.advisor.MetricsAdvisor;
+import com.llm.gateway.llm_gateway.guardrail.MetricsAdvisor;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
 import com.llm.gateway.llm_gateway.facade.LlmServiceProvider;
