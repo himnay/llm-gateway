@@ -33,7 +33,7 @@ public class MetricsAdvisor implements CallAdvisor, StreamAdvisor {
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
         long start = System.currentTimeMillis();
         String provider = resolveProvider(request);
-        recordPromptLength(provider, extractUserText(request));
+        recordPromptLength(provider, AdvisorUtils.extractUserText(request));
         try {
             ChatClientResponse response = chain.nextCall(request);
             recordSuccess(provider, response.chatResponse(), System.currentTimeMillis() - start);
@@ -48,7 +48,7 @@ public class MetricsAdvisor implements CallAdvisor, StreamAdvisor {
     public Flux<ChatClientResponse> adviseStream(ChatClientRequest request, StreamAdvisorChain chain) {
         long start = System.currentTimeMillis();
         String provider = resolveProvider(request);
-        recordPromptLength(provider, extractUserText(request));
+        recordPromptLength(provider, AdvisorUtils.extractUserText(request));
         return chain.nextStream(request)
                 .doOnComplete(() -> {
                     metricsService.recordRequest(provider, false);
@@ -60,11 +60,6 @@ public class MetricsAdvisor implements CallAdvisor, StreamAdvisor {
     private String resolveProvider(ChatClientRequest request) {
         Object p = request.context().get(PROVIDER_PARAM);
         return p != null ? p.toString() : "unknown";
-    }
-
-    private String extractUserText(ChatClientRequest request) {
-        var msg = request.prompt().getUserMessage();
-        return msg != null ? msg.getText() : null;
     }
 
     private void recordPromptLength(String provider, String text) {

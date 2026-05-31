@@ -7,7 +7,6 @@ import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.AdvisorChain;
 import org.springframework.ai.chat.client.advisor.api.BaseAdvisor;
-import org.springframework.ai.chat.model.Generation;
 import org.springframework.core.Ordered;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
@@ -17,7 +16,12 @@ import java.util.List;
 
 /**
  * OUTPUT guardrail — async heuristic hallucination detection.
- * Zero latency impact: check runs fire-and-forget after response is returned.
+ * Zero latency impact: the check runs fire-and-forget after the response is returned.
+ *
+ * NOTE: This is a heuristic signal (uncertainty phrases + knowledge-cutoff signals).
+ * It does not detect all hallucinations and produces false positives for legitimate
+ * epistemic hedging. For precise factual grounding, consider retrieval-augmented
+ * generation (RAG) or dedicated fact-checking services.
  */
 @Slf4j
 @Component
@@ -51,11 +55,10 @@ public class HallucinationMonitorAdvisor implements BaseAdvisor {
 
     @Override
     public ChatClientResponse after(ChatClientResponse response, AdvisorChain chain) {
-        String text = extractText(response);
+        String text = AdvisorUtils.extractResponseText(response);
         if (text == null || text.isBlank()) return response;
 
         String provider = (String) response.context().getOrDefault(MetricsAdvisor.PROVIDER_PARAM, "unknown");
-
         Mono.fromRunnable(() -> analyse(text, provider))
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(null, ex -> log.debug("HallucinationMonitor | error | {}", ex.getMessage()));
@@ -76,12 +79,5 @@ public class HallucinationMonitorAdvisor implements BaseAdvisor {
         } else if (score > 0) {
             log.debug("GUARDRAIL | MINOR_UNCERTAINTY | provider={} | score={}", provider, score);
         }
-    }
-
-    private String extractText(ChatClientResponse response) {
-        if (response.chatResponse() == null) return null;
-        Generation result = response.chatResponse().getResult();
-        if (result == null || result.getOutput() == null) return null;
-        return result.getOutput().getText();
     }
 }

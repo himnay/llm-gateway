@@ -5,61 +5,72 @@ import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
 import com.llm.gateway.llm_gateway.facade.LlmServiceProvider;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
+import com.llm.gateway.llm_gateway.template.PromptTemplateService;
 import com.llm.gateway.llm_gateway.tools.GatewayTools;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 @Slf4j
 @Service
+@ConditionalOnProperty(prefix = "llm.providers.openai", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class OpenAiService implements LlmServiceProvider {
+
+    private static final String PROVIDER = "openai";
 
     private final ChatClient chatClient;
     private final GatewayTools gatewayTools;
+    private final PromptTemplateService promptTemplateService;
 
     @Value("${llm.providers.openai.model:gpt-4o}")
     private String defaultModel;
 
     public OpenAiService(
             @Qualifier("openAiChatClient") ChatClient chatClient,
-            GatewayTools gatewayTools) {
-        this.chatClient   = chatClient;
-        this.gatewayTools = gatewayTools;
+            GatewayTools gatewayTools,
+            PromptTemplateService promptTemplateService) {
+        this.chatClient            = chatClient;
+        this.gatewayTools          = gatewayTools;
+        this.promptTemplateService = promptTemplateService;
     }
 
     @Override
-    public String getProviderName() {
-        return "openai";
-    }
+    public String getProviderName() { return PROVIDER; }
 
     @Override
     public LlmResponse execute(LlmRequest request) {
-        String model = request.getModel() != null ? request.getModel() : defaultModel;
-        log.info("Invoking OpenAI via Spring AI ChatClient | model={}", model);
+        String model         = request.getModel() != null ? request.getModel() : defaultModel;
+        String systemText    = promptTemplateService.renderSystemPrompt(PROVIDER, request);
+        String assistantText = promptTemplateService.renderAssistantMessage(request);
 
+        log.info("Invoking OpenAI | model={}", model);
         try {
-            ChatResponse chatResponse = chatClient.prompt()
-                    .system(sp -> {
-                        if (request.getSystemPrompt() != null && !request.getSystemPrompt().isBlank()) {
-                            sp.text(request.getSystemPrompt());
-                        }
-                    })
-                    .user(request.getPrompt())
+            var spec = chatClient.prompt()
+                    .system(systemText)
+                    .user(request.getPrompt());
+
+            if (assistantText != null) {
+                spec = spec.messages(new AssistantMessage(assistantText));
+            }
+
+            ChatResponse chatResponse = spec
                     .options(OpenAiChatOptions.builder()
                             .model(model)
                             .temperature(request.getTemperature() != null ? request.getTemperature() : 0.7)
                             .maxTokens(request.getMaxTokens() != null ? request.getMaxTokens() : 2048))
-                    .advisors(spec -> {
+                    .advisors(a -> {
                         if (request.getSessionId() != null) {
-                            spec.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
+                            a.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
                         }
-                        spec.param(MetricsAdvisor.PROVIDER_PARAM, "openai");
+                        a.param(MetricsAdvisor.PROVIDER_PARAM, PROVIDER);
                     })
                     .tools(gatewayTools)
                     .call()
@@ -67,8 +78,7 @@ public class OpenAiService implements LlmServiceProvider {
 
             var usage = chatResponse.getMetadata().getUsage();
             return LlmResponse.builder()
-                    .provider("OpenAI")
-                    .model(model)
+                    .provider("OpenAI").model(model)
                     .content(chatResponse.getResult().getOutput().getText())
                     .completionTokens(usage != null ? usage.getCompletionTokens() : null)
                     .promptTokens(usage != null ? usage.getPromptTokens() : null)
@@ -80,51 +90,36 @@ public class OpenAiService implements LlmServiceProvider {
             throw e;
         } catch (Exception e) {
             log.error("OpenAI ChatClient error | model={}", model, e);
-            return LlmResponse.builder()
-                    .provider("OpenAI").model(model)
-                    .error(e.getMessage()).timestamp(System.currentTimeMillis())
-                    .build();
+            return LlmResponse.builder().provider("OpenAI").model(model)
+                    .error(e.getMessage()).timestamp(System.currentTimeMillis()).build();
         }
     }
 
-    /**
-     * Streaming variant – returns token chunks as a Flux.
-     * Controller maps this to text/event-stream (SSE).
-     */
+    /** Streaming variant — returns token chunks as a Flux. */
     public Flux<String> stream(LlmRequest request) {
-        String model = request.getModel() != null ? request.getModel() : defaultModel;
+        String model      = request.getModel() != null ? request.getModel() : defaultModel;
+        String systemText = promptTemplateService.renderSystemPrompt(PROVIDER, request);
         return chatClient.prompt()
-                .system(sp -> {
-                    if (request.getSystemPrompt() != null && !request.getSystemPrompt().isBlank()) {
-                        sp.text(request.getSystemPrompt());
-                    }
-                })
+                .system(systemText)
                 .user(request.getPrompt())
                 .options(OpenAiChatOptions.builder()
                         .model(model)
                         .temperature(request.getTemperature() != null ? request.getTemperature() : 0.7))
-                .advisors(spec -> {
+                .advisors(a -> {
                     if (request.getSessionId() != null) {
-                        spec.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
+                        a.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
                     }
-                    spec.param(MetricsAdvisor.PROVIDER_PARAM, "openai");
+                    a.param(MetricsAdvisor.PROVIDER_PARAM, PROVIDER);
                 })
-                .stream()
-                .content();
+                .stream().content();
     }
 
-    /**
-     * Structured-output variant – deserialises the model response into a typed Java record.
-     * The model is instructed via the response schema; no manual JSON parsing needed.
-     */
+    /** Structured-output variant — deserialises the response into a typed Java record. */
     public <T> T extractStructured(LlmRequest request, Class<T> responseType) {
-        String model = request.getModel() != null ? request.getModel() : defaultModel;
+        String model      = request.getModel() != null ? request.getModel() : defaultModel;
+        String systemText = promptTemplateService.renderSystemPrompt(PROVIDER, request);
         return chatClient.prompt()
-                .system(sp -> {
-                    if (request.getSystemPrompt() != null && !request.getSystemPrompt().isBlank()) {
-                        sp.text(request.getSystemPrompt());
-                    }
-                })
+                .system(systemText)
                 .user(request.getPrompt())
                 .options(OpenAiChatOptions.builder().model(model))
                 .call()

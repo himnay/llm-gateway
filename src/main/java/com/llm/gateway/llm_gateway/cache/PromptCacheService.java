@@ -119,9 +119,14 @@ public class PromptCacheService {
     // ──────────────────────────────────────────────────────────────────────────
 
     private String buildKey(String provider, LlmRequest request) {
-        String model        = request.getModel() != null ? request.getModel() : "default";
-        String promptHash   = sha256(request.getPrompt());
-        return keyPrefix + ":" + provider.toLowerCase() + ":" + model + ":" + promptHash;
+        String model = request.getModel() != null ? request.getModel() : "default";
+        // Include every field that affects the model's response so that
+        // different system prompts / template vars never collide on the same key.
+        String keySource = request.getPrompt()
+                + "|" + (request.getSystemPrompt()     != null ? request.getSystemPrompt()              : "")
+                + "|" + (request.getAssistantMessage() != null ? request.getAssistantMessage()           : "")
+                + "|" + (request.getTemplateVars()     != null ? request.getTemplateVars().toString()    : "");
+        return keyPrefix + ":" + provider.toLowerCase() + ":" + model + ":" + sha256(keySource);
     }
 
     private static String sha256(String input) {

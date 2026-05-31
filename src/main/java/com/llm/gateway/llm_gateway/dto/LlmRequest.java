@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -39,5 +40,23 @@ public class LlmRequest {
 
     @JsonProperty("providers")
     private List<LlmProvider> providers;
+
+    /** Variables injected into the per-provider .st system-prompt template. */
+    @JsonProperty("template_vars")
+    private Map<String, Object> templateVars;
+
+    /**
+     * Optional assistant message prepended to the conversation turn.
+     * Useful for prefilling (Anthropic), few-shot priming, or format anchoring.
+     */
+    @JsonProperty("assistant_message")
+    private String assistantMessage;
+
+    /**
+     * Correlation ID propagated from the X-Request-ID header.
+     * Set by the handler; not expected from the client body.
+     */
+    @JsonProperty(value = "correlation_id", access = JsonProperty.Access.READ_ONLY)
+    private String correlationId;
 }
 

@@ -51,5 +51,9 @@ public class LlmResponse {
     private Boolean sanitized;
 
     private String error;
+
+    /** Echoed from the X-Request-ID request header (or gateway-generated if absent). */
+    @JsonProperty("correlation_id")
+    private String correlationId;
 }
 

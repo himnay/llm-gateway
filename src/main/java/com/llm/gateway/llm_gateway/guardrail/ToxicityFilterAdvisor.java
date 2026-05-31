@@ -8,7 +8,6 @@ import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.AdvisorChain;
 import org.springframework.ai.chat.client.advisor.api.BaseAdvisor;
-import org.springframework.ai.chat.model.Generation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.stereotype.Component;
@@ -18,13 +17,14 @@ import reactor.core.scheduler.Schedulers;
 import java.util.List;
 
 /**
- * INPUT + OUTPUT guardrail — toxic / harmful content detection.
+ * INPUT + OUTPUT guardrail — harmful content detection.
  *
- * INPUT  : BLOCKS the request if toxic content is detected (throws → HTTP 400).
- * OUTPUT : async scan; logs warning and emits metric if toxic content found in response.
+ * INPUT  : blocks the request if a toxic pattern is matched (→ HTTP 400).
+ * OUTPUT : async scan; logs warning and emits metric if harmful content found in response.
  *
- * Uses a configurable keyword/pattern list. In production, replace or augment with
- * an ML-based classifier (e.g. OpenAI Moderation API, Perspective API).
+ * NOTE: Keyword-list detection produces false positives on legitimate security research
+ * and educational queries. For production, augment with an ML-based classifier
+ * (e.g. OpenAI Moderation API, Perspective API, or Azure AI Content Safety).
  */
 @Slf4j
 @Component
@@ -34,8 +34,9 @@ public class ToxicityFilterAdvisor implements BaseAdvisor {
     private static final List<String> TOXIC_PATTERNS = List.of(
             "how to make a bomb", "how to build a weapon", "step by step instructions to kill",
             "synthesize methamphetamine", "create malware", "write a virus",
-            "exploit vulnerability", "hack into", "bypass security",
-            "child exploitation", "self-harm instructions", "suicide method"
+            "exploit vulnerability to attack", "hack into systems",
+            "bypass authentication systems", "child exploitation",
+            "self-harm instructions", "suicide method"
     );
 
     private final LlmMetricsService metricsService;
@@ -50,7 +51,7 @@ public class ToxicityFilterAdvisor implements BaseAdvisor {
     public ChatClientRequest before(ChatClientRequest request, AdvisorChain chain) {
         if (!enabled) return request;
 
-        String text = extractUserText(request);
+        String text = AdvisorUtils.extractUserText(request);
         if (text == null || text.isBlank()) return request;
 
         String lower = text.toLowerCase();
@@ -63,7 +64,6 @@ public class ToxicityFilterAdvisor implements BaseAdvisor {
                 throw new PromptValidationException(List.of("Request blocked: harmful or toxic content detected"));
             }
         }
-
         return request;
     }
 
@@ -71,11 +71,10 @@ public class ToxicityFilterAdvisor implements BaseAdvisor {
     public ChatClientResponse after(ChatClientResponse response, AdvisorChain chain) {
         if (!enabled) return response;
 
-        String text = extractResponseText(response);
+        String text = AdvisorUtils.extractResponseText(response);
         if (text == null || text.isBlank()) return response;
 
         String provider = (String) response.context().getOrDefault(MetricsAdvisor.PROVIDER_PARAM, "unknown");
-
         Mono.fromRunnable(() -> scanOutput(text, provider))
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(null, ex -> log.debug("ToxicityFilter | scan error | {}", ex.getMessage()));
@@ -92,17 +91,5 @@ public class ToxicityFilterAdvisor implements BaseAdvisor {
                 return;
             }
         }
-    }
-
-    private String extractUserText(ChatClientRequest request) {
-        var msg = request.prompt().getUserMessage();
-        return msg != null ? msg.getText() : null;
-    }
-
-    private String extractResponseText(ChatClientResponse response) {
-        if (response.chatResponse() == null) return null;
-        Generation result = response.chatResponse().getResult();
-        if (result == null || result.getOutput() == null) return null;
-        return result.getOutput().getText();
     }
 }

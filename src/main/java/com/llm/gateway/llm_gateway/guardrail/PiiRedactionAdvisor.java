@@ -5,7 +5,6 @@ import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.AdvisorChain;
 import org.springframework.ai.chat.client.advisor.api.BaseAdvisor;
-import org.springframework.ai.chat.model.Generation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.stereotype.Component;
@@ -19,10 +18,13 @@ import java.util.regex.Pattern;
 /**
  * INPUT + OUTPUT guardrail — PII detection and redaction.
  *
- * INPUT  : replaces detected PII with type-labelled placeholders before sending to the LLM.
- * OUTPUT : async scan of the response to flag any PII leakage (does not block).
+ * INPUT  : replaces detected PII with typed placeholders before the LLM sees it.
+ * OUTPUT : async scan to flag any PII leakage in the response (non-blocking).
  *
- * Supported types: EMAIL, PHONE, CREDIT_CARD, SSN, IP_ADDRESS, IBAN, PASSPORT
+ * NOTE: Regex-based PII detection has inherent limitations (false positives and
+ * negatives). For production workloads handling sensitive data, replace or augment
+ * with a dedicated service (e.g. AWS Comprehend, Azure AI Content Safety, or
+ * Microsoft Presidio).
  */
 @Slf4j
 @Component
@@ -36,6 +38,7 @@ public class PiiRedactionAdvisor implements BaseAdvisor {
         PII_PATTERNS.put("[CREDIT_CARD]", Pattern.compile("\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\\b"));
         PII_PATTERNS.put("[SSN]",         Pattern.compile("\\b\\d{3}[-\\s]\\d{2}[-\\s]\\d{4}\\b"));
         PII_PATTERNS.put("[IP_ADDRESS]",  Pattern.compile("\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\b"));
+        PII_PATTERNS.put("[IBAN]",        Pattern.compile("\\b[A-Z]{2}\\d{2}[A-Z0-9]{4}\\d{7}(?:[A-Z0-9]?){0,16}\\b"));
         PII_PATTERNS.put("[PASSPORT]",    Pattern.compile("\\b[A-Z]{1,2}\\d{6,9}\\b"));
     }
 
@@ -49,7 +52,7 @@ public class PiiRedactionAdvisor implements BaseAdvisor {
     public ChatClientRequest before(ChatClientRequest request, AdvisorChain chain) {
         if (!enabled) return request;
 
-        String text = extractUserText(request);
+        String text = AdvisorUtils.extractUserText(request);
         if (text == null || text.isBlank()) return request;
 
         RedactionResult result = redact(text);
@@ -66,11 +69,10 @@ public class PiiRedactionAdvisor implements BaseAdvisor {
     public ChatClientResponse after(ChatClientResponse response, AdvisorChain chain) {
         if (!enabled) return response;
 
-        String text = extractResponseText(response);
+        String text = AdvisorUtils.extractResponseText(response);
         if (text == null || text.isBlank()) return response;
 
         String provider = (String) response.context().getOrDefault(MetricsAdvisor.PROVIDER_PARAM, "unknown");
-
         Mono.fromRunnable(() -> scanOutput(text, provider))
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(null, ex -> log.debug("PiiRedactionAdvisor | scan error | {}", ex.getMessage()));
@@ -97,18 +99,6 @@ public class PiiRedactionAdvisor implements BaseAdvisor {
             }
         }
         return new RedactionResult(!result.equals(text), result, types.toString().trim());
-    }
-
-    private String extractUserText(ChatClientRequest request) {
-        var msg = request.prompt().getUserMessage();
-        return msg != null ? msg.getText() : null;
-    }
-
-    private String extractResponseText(ChatClientResponse response) {
-        if (response.chatResponse() == null) return null;
-        Generation result = response.chatResponse().getResult();
-        if (result == null || result.getOutput() == null) return null;
-        return result.getOutput().getText();
     }
 
     record RedactionResult(boolean redacted, String sanitized, String types) {}

@@ -1,9 +1,5 @@
 package com.llm.gateway.llm_gateway.guardrail;
 
-import com.llm.gateway.llm_gateway.security.PromptSanitizer;
-import com.llm.gateway.llm_gateway.security.PromptValidationException;
-import com.llm.gateway.llm_gateway.security.SanitizationResult;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
@@ -16,15 +12,14 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
 /**
- * INPUT guardrail — runs PromptSanitizer at HIGHEST_PRECEDENCE.
- * Blocks prompt injection attacks and strips dangerous markup.
+ * INPUT checkpoint — logs prompt length at the advisor-chain entry point.
+ * Prompt injection sanitization is already handled upstream by LlmGatewayFacade
+ * (before the cache lookup and observation span), so this advisor is a pure
+ * pass-through that adds no duplicate scanning overhead.
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class PromptGuardAdvisor implements CallAdvisor, StreamAdvisor {
-
-    private final PromptSanitizer sanitizer;
 
     @Override
     public String getName() { return getClass().getSimpleName(); }
@@ -34,38 +29,20 @@ public class PromptGuardAdvisor implements CallAdvisor, StreamAdvisor {
 
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-        return chain.nextCall(guard(request));
+        logPrompt(request);
+        return chain.nextCall(request);
     }
 
     @Override
     public Flux<ChatClientResponse> adviseStream(ChatClientRequest request, StreamAdvisorChain chain) {
-        return chain.nextStream(guard(request));
+        logPrompt(request);
+        return chain.nextStream(request);
     }
 
-    private ChatClientRequest guard(ChatClientRequest request) {
-        String text = extractUserText(request);
-        if (text == null || text.isBlank()) return request;
-
-        SanitizationResult result = sanitizer.sanitize(text);
-
-        if (!result.isValid()) {
-            log.warn("GUARDRAIL | PROMPT_INJECT | violations={}", result.getViolations());
-            throw new PromptValidationException(result.getViolations());
+    private void logPrompt(ChatClientRequest request) {
+        String text = AdvisorUtils.extractUserText(request);
+        if (text != null) {
+            log.debug("GUARDRAIL | PromptGuard | prompt_length={}", text.length());
         }
-
-        if (result.isModified()) {
-            log.info("GUARDRAIL | PROMPT_SANITIZED | warnings={}", result.getWarnings());
-            return request.mutate()
-                    .prompt(request.prompt().augmentUserMessage(
-                            m -> m.mutate().text(result.getSanitizedPrompt()).build()))
-                    .build();
-        }
-
-        return request;
-    }
-
-    private String extractUserText(ChatClientRequest request) {
-        var msg = request.prompt().getUserMessage();
-        return msg != null ? msg.getText() : null;
     }
 }

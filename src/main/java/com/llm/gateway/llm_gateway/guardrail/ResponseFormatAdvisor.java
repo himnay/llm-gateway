@@ -7,7 +7,6 @@ import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.AdvisorChain;
 import org.springframework.ai.chat.client.advisor.api.BaseAdvisor;
-import org.springframework.ai.chat.model.Generation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.stereotype.Component;
@@ -18,12 +17,7 @@ import java.util.List;
 
 /**
  * OUTPUT guardrail — response format and quality validation.
- *
- * Async checks (no latency impact):
- *   - Empty or suspiciously short responses
- *   - Responses exceeding max length
- *   - Refusal patterns (model declined the request)
- *   - Truncation indicators (response appears cut off)
+ * All checks are async (fire-and-forget) to add zero latency to the response path.
  */
 @Slf4j
 @Component
@@ -63,7 +57,7 @@ public class ResponseFormatAdvisor implements BaseAdvisor {
     public ChatClientResponse after(ChatClientResponse response, AdvisorChain chain) {
         if (!enabled) return response;
 
-        String text = extractText(response);
+        String text = AdvisorUtils.extractResponseText(response);
         String provider = (String) response.context().getOrDefault(MetricsAdvisor.PROVIDER_PARAM, "unknown");
 
         Mono.fromRunnable(() -> validate(text, provider))
@@ -81,37 +75,21 @@ public class ResponseFormatAdvisor implements BaseAdvisor {
         }
 
         int length = text.length();
-
         if (length < minLength) {
             log.warn("GUARDRAIL | RESPONSE_TOO_SHORT | provider={} | length={} | min={}", provider, length, minLength);
             metricsService.recordError(provider, "RESPONSE_TOO_SHORT");
         }
-
         if (length > maxLength) {
             log.warn("GUARDRAIL | RESPONSE_TOO_LONG | provider={} | length={} | max={}", provider, length, maxLength);
             metricsService.recordError(provider, "RESPONSE_TOO_LONG");
         }
 
         String lower = text.toLowerCase();
-
-        REFUSAL_PATTERNS.stream()
-                .filter(lower::startsWith)
-                .findFirst()
-                .ifPresent(p -> {
-                    log.warn("GUARDRAIL | REFUSAL_DETECTED | provider={} | pattern={}", provider, p);
-                    metricsService.recordError(provider, "RESPONSE_REFUSAL");
-                });
-
-        TRUNCATION_SIGNALS.stream()
-                .filter(s -> lower.endsWith(s.toLowerCase()))
-                .findFirst()
-                .ifPresent(s -> log.warn("GUARDRAIL | TRUNCATION_SUSPECTED | provider={} | signal={}", provider, s));
-    }
-
-    private String extractText(ChatClientResponse response) {
-        if (response.chatResponse() == null) return null;
-        Generation result = response.chatResponse().getResult();
-        if (result == null || result.getOutput() == null) return null;
-        return result.getOutput().getText();
+        REFUSAL_PATTERNS.stream().filter(lower::startsWith).findFirst().ifPresent(p -> {
+            log.warn("GUARDRAIL | REFUSAL_DETECTED | provider={} | pattern={}", provider, p);
+            metricsService.recordError(provider, "RESPONSE_REFUSAL");
+        });
+        TRUNCATION_SIGNALS.stream().filter(s -> lower.endsWith(s.toLowerCase())).findFirst().ifPresent(s ->
+                log.warn("GUARDRAIL | TRUNCATION_SUSPECTED | provider={} | signal={}", provider, s));
     }
 }

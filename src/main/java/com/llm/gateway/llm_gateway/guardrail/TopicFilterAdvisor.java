@@ -16,12 +16,7 @@ import java.util.List;
 
 /**
  * INPUT guardrail — configurable topic restriction.
- *
- * Blocks requests that mention any of the configured restricted topics.
- * Configure via {@code llm.guardrails.topic-filter.blocked-topics} in application.yaml.
- *
- * Example:
- *   llm.guardrails.topic-filter.blocked-topics: competitor-x,off-limits,confidential
+ * Configure via llm.guardrails.topic-filter.blocked-topics (comma-separated).
  */
 @Slf4j
 @Component
@@ -43,7 +38,7 @@ public class TopicFilterAdvisor implements BaseAdvisor {
     public ChatClientRequest before(ChatClientRequest request, AdvisorChain chain) {
         if (!enabled || blockedTopics == null || blockedTopics.isEmpty()) return request;
 
-        String text = extractUserText(request);
+        String text = AdvisorUtils.extractUserText(request);
         if (text == null || text.isBlank()) return request;
 
         String lower = text.toLowerCase();
@@ -58,17 +53,11 @@ public class TopicFilterAdvisor implements BaseAdvisor {
                         List.of("Request blocked: topic '" + t + "' is restricted"));
             }
         }
-
         return request;
     }
 
     @Override
     public ChatClientResponse after(ChatClientResponse response, AdvisorChain chain) {
         return response;
-    }
-
-    private String extractUserText(ChatClientRequest request) {
-        var msg = request.prompt().getUserMessage();
-        return msg != null ? msg.getText() : null;
     }
 }

@@ -3,37 +3,43 @@ package com.llm.gateway.llm_gateway.facade;
 import com.llm.gateway.llm_gateway.cache.PromptCacheService;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
+import com.llm.gateway.llm_gateway.dto.StructuredLlmResponse;
 import com.llm.gateway.llm_gateway.observability.LlmMetricsService;
 import com.llm.gateway.llm_gateway.security.PromptSanitizer;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
 import com.llm.gateway.llm_gateway.security.SanitizationResult;
+import com.llm.gateway.llm_gateway.service.OpenAiService;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
+import jakarta.annotation.Nullable;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * LLM Gateway Facade – single entry point for all LLM interactions.
+ * LLM Gateway Facade — single entry point for all LLM interactions.
  *
  * Request pipeline:
  *   1. Resolve provider
- *   2. Sanitize prompt (PromptSanitizer)
+ *   2. Sanitize prompt
  *   3. Redis cache lookup
- *   4. Open Micrometer Observation span → Zipkin
+ *   4. Open Micrometer Observation span
  *   5. Enrich MDC (traceId, spanId, requestId, provider)
- *   6. Delegate to provider (with Resilience4j circuit-breaker + retry + rate-limiter)
+ *   6. Delegate to provider (with Resilience4j circuit-breaker + retry)
  *   7. Attach observability metadata to response
  *   8. Store in cache on success
  *   9. Record gateway-level metrics
@@ -47,9 +53,15 @@ public class LlmGatewayFacade {
     private final PromptCacheService cacheService;
     private final LlmMetricsService metricsService;
     private final ObservationRegistry observationRegistry;
+
     @Autowired(required = false)
     @Nullable
     private Tracer tracer;
+
+    // Injected directly for structured-output extraction (OpenAI-only feature)
+    @Autowired(required = false)
+    @Nullable
+    private OpenAiService openAiService;
 
     public LlmGatewayFacade(List<LlmServiceProvider> providerList,
                              PromptSanitizer sanitizer,
@@ -75,14 +87,14 @@ public class LlmGatewayFacade {
     @CircuitBreaker(name = "llm-gateway", fallbackMethod = "circuitBreakerFallback")
     public LlmResponse execute(String providerName, LlmRequest request) {
         long   startTime = System.currentTimeMillis();
-        String reqId     = UUID.randomUUID().toString();
+        // Honour incoming correlation ID from the handler (X-Request-ID header)
+        String reqId    = request.getCorrelationId() != null
+                ? request.getCorrelationId() : UUID.randomUUID().toString();
         String provider  = providerName.toLowerCase();
 
         MDC.put("requestId", reqId);
         MDC.put("provider",  provider);
-        if (request.getSessionId() != null) {
-            MDC.put("sessionId", request.getSessionId());
-        }
+        if (request.getSessionId() != null) MDC.put("sessionId", request.getSessionId());
 
         try {
             // ── 1. Resolve provider ───────────────────────────────────────────
@@ -92,13 +104,11 @@ public class LlmGatewayFacade {
             SanitizationResult sanitization = sanitizer.sanitize(request.getPrompt());
             if (!sanitization.isValid()) {
                 metricsService.recordRejectedRequest(provider, "INJECTION_DETECTED");
-                log.warn("SECURITY | Prompt rejected | requestId={} | violations={}",
-                         reqId, sanitization.getViolations());
+                log.warn("SECURITY | Prompt rejected | requestId={} | violations={}", reqId, sanitization.getViolations());
                 throw new PromptValidationException(sanitization.getViolations());
             }
             if (sanitization.isModified()) {
-                log.info("SECURITY | Prompt sanitized | requestId={} | warnings={}",
-                         reqId, sanitization.getWarnings());
+                log.info("SECURITY | Prompt sanitized | requestId={} | warnings={}", reqId, sanitization.getWarnings());
                 request.setPrompt(sanitization.getSanitizedPrompt());
             }
             metricsService.recordPromptLength(provider, request.getPrompt().length());
@@ -109,10 +119,11 @@ public class LlmGatewayFacade {
                 LlmResponse hit = cached.get();
                 hit.setCacheHit(true);
                 hit.setRequestId(reqId);
+                hit.setCorrelationId(reqId);
                 hit.setSessionId(request.getSessionId());
                 hit.setLatencyMs(System.currentTimeMillis() - startTime);
                 metricsService.recordCacheHit(provider);
-                log.info("CACHE | Serving cached response | requestId={} | provider={}", reqId, provider);
+                log.info("CACHE | HIT | requestId={} | provider={}", reqId, provider);
                 return hit;
             }
 
@@ -141,7 +152,7 @@ public class LlmGatewayFacade {
                 MDC.put("spanId",  spanId);
 
                 log.info("LLM | Calling provider | requestId={} | traceId={} | provider={} | promptLen={}",
-                         reqId, traceId, provider, request.getPrompt().length());
+                        reqId, traceId, provider, request.getPrompt().length());
 
                 // ── 6. Delegate to provider ───────────────────────────────────
                 response = providerBean.execute(request);
@@ -150,6 +161,7 @@ public class LlmGatewayFacade {
                 response.setTraceId(traceId);
                 response.setSpanId(spanId);
                 response.setRequestId(reqId);
+                response.setCorrelationId(reqId);
                 response.setSessionId(request.getSessionId());
                 response.setSanitized(sanitization.isModified());
                 response.setCacheHit(false);
@@ -157,7 +169,7 @@ public class LlmGatewayFacade {
 
                 observation.event(Observation.Event.of("llm.response.received"));
                 log.info("LLM | Response received | requestId={} | provider={} | latencyMs={} | error={}",
-                         reqId, provider, response.getLatencyMs(), response.getError());
+                        reqId, provider, response.getLatencyMs(), response.getError());
 
             } catch (Exception ex) {
                 observation.error(ex);
@@ -192,11 +204,7 @@ public class LlmGatewayFacade {
     }
 
     /**
-     * Tries each provider in {@code providerChain} in order, returning the first
-     * successful response. If all providers fail, returns an error response
-     * listing the exhausted chain.
-     *
-     * Each attempt goes through the full pipeline (sanitize → cache → CB/retry).
+     * Tries each provider in order, returning the first successful response.
      */
     public LlmResponse executeWithFailover(List<String> providerChain, LlmRequest request) {
         Exception lastException = null;
@@ -219,6 +227,35 @@ public class LlmGatewayFacade {
         return errorResponse("failover", "All providers exhausted " + providerChain + ": " + detail);
     }
 
+    /**
+     * Structured-output extraction via OpenAI's BeanOutputConverter.
+     * Runs inside an Observation span for full tracing coverage.
+     */
+    public StructuredLlmResponse executeStructured(LlmRequest request) {
+        if (openAiService == null) {
+            throw new IllegalStateException("OpenAI provider is not available for structured output extraction");
+        }
+        String reqId = request.getCorrelationId() != null
+                ? request.getCorrelationId() : UUID.randomUUID().toString();
+        MDC.put("requestId", reqId);
+        try {
+            Observation obs = Observation.createNotStarted("llm.structured", observationRegistry)
+                    .contextualName("LLM structured extraction")
+                    .lowCardinalityKeyValue("provider", "openai")
+                    .start();
+            try {
+                return openAiService.extractStructured(request, StructuredLlmResponse.class);
+            } catch (Exception ex) {
+                obs.error(ex);
+                throw ex;
+            } finally {
+                obs.stop();
+            }
+        } finally {
+            MDC.remove("requestId");
+        }
+    }
+
     public LlmResponse circuitBreakerFallback(String providerName, LlmRequest request, Throwable ex) {
         log.warn("CIRCUIT_OPEN | Provider={} | {}", providerName, ex.getMessage());
         metricsService.recordError(providerName, "CIRCUIT_OPEN");
@@ -239,7 +276,7 @@ public class LlmGatewayFacade {
         LlmServiceProvider p = providers.get(name);
         if (p == null) {
             throw new IllegalArgumentException(
-                "Unknown LLM provider: '" + name + "'. Registered: " + providers.keySet());
+                    "Unknown LLM provider: '" + name + "'. Registered: " + providers.keySet());
         }
         return p;
     }
