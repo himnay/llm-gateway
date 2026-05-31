@@ -1,0 +1,278 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-05-31",
+  "__export_source": "llm-gateway",
+  "resources": [
+    {
+      "_id": "wrk_llm_gateway",
+      "_type": "workspace",
+      "name": "LLM Gateway",
+      "description": "Spring AI LLM Gateway – base URL http://localhost:8080/llm"
+    },
+    {
+      "_id": "env_base",
+      "_type": "environment",
+      "parentId": "wrk_llm_gateway",
+      "name": "Local",
+      "data": {
+        "base_url": "http://localhost:8080/llm",
+        "session_id": "session-001"
+      }
+    },
+    {
+      "_id": "fld_info",
+      "_type": "request_group",
+      "parentId": "wrk_llm_gateway",
+      "name": "Info"
+    },
+    {
+      "_id": "req_health",
+      "_type": "request",
+      "parentId": "fld_info",
+      "name": "Health",
+      "method": "GET",
+      "url": "{{ _.base_url }}/health"
+    },
+    {
+      "_id": "req_providers",
+      "_type": "request",
+      "parentId": "fld_info",
+      "name": "Providers",
+      "method": "GET",
+      "url": "{{ _.base_url }}/providers"
+    },
+    {
+      "_id": "req_models",
+      "_type": "request",
+      "parentId": "fld_info",
+      "name": "Models",
+      "method": "GET",
+      "url": "{{ _.base_url }}/models"
+    },
+    {
+      "_id": "fld_query",
+      "_type": "request_group",
+      "parentId": "wrk_llm_gateway",
+      "name": "Query"
+    },
+    {
+      "_id": "req_query_default",
+      "_type": "request",
+      "parentId": "fld_query",
+      "name": "Query – default (openai)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"What is Spring AI?\"\n}"
+      }
+    },
+    {
+      "_id": "req_query_anthropic",
+      "_type": "request",
+      "parentId": "fld_query",
+      "name": "Query – anthropic",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Explain transformers in one sentence.\",\n  \"provider\": \"anthropic\",\n  \"model\": \"claude-3-5-sonnet-20241022\",\n  \"max_tokens\": 512\n}"
+      }
+    },
+    {
+      "_id": "req_query_ollama",
+      "_type": "request",
+      "parentId": "fld_query",
+      "name": "Query – ollama",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Hello!\",\n  \"provider\": \"ollama\",\n  \"model\": \"llama3.1\"\n}"
+      }
+    },
+    {
+      "_id": "fld_per_provider",
+      "_type": "request_group",
+      "parentId": "wrk_llm_gateway",
+      "name": "Per-Provider Chat"
+    },
+    {
+      "_id": "req_openai_chat",
+      "_type": "request",
+      "parentId": "fld_per_provider",
+      "name": "OpenAI /chat",
+      "method": "POST",
+      "url": "{{ _.base_url }}/openai/chat",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"What is 2 + 2?\",\n  \"model\": \"gpt-4o\"\n}"
+      }
+    },
+    {
+      "_id": "req_anthropic_chat",
+      "_type": "request",
+      "parentId": "fld_per_provider",
+      "name": "Anthropic /chat",
+      "method": "POST",
+      "url": "{{ _.base_url }}/anthropic/chat",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Write a haiku about code.\"\n}"
+      }
+    },
+    {
+      "_id": "req_ollama_chat",
+      "_type": "request",
+      "parentId": "fld_per_provider",
+      "name": "Ollama /chat",
+      "method": "POST",
+      "url": "{{ _.base_url }}/ollama/chat",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Summarise the water cycle.\"\n}"
+      }
+    },
+    {
+      "_id": "fld_failover",
+      "_type": "request_group",
+      "parentId": "wrk_llm_gateway",
+      "name": "Failover"
+    },
+    {
+      "_id": "req_failover_explicit",
+      "_type": "request",
+      "parentId": "fld_failover",
+      "name": "Failover – explicit chain",
+      "method": "POST",
+      "url": "{{ _.base_url }}/failover",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Explain quantum entanglement simply.\",\n  \"providers\": [\"openai\", \"anthropic\", \"ollama\"]\n}"
+      }
+    },
+    {
+      "_id": "req_failover_default",
+      "_type": "request",
+      "parentId": "fld_failover",
+      "name": "Failover – default chain",
+      "method": "POST",
+      "url": "{{ _.base_url }}/failover",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"What is machine learning?\"\n}"
+      }
+    },
+    {
+      "_id": "fld_chat",
+      "_type": "request_group",
+      "parentId": "wrk_llm_gateway",
+      "name": "Multi-turn Chat"
+    },
+    {
+      "_id": "req_chat_turn1",
+      "_type": "request",
+      "parentId": "fld_chat",
+      "name": "Chat – turn 1",
+      "method": "POST",
+      "url": "{{ _.base_url }}/chat",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"My name is Alice.\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      }
+    },
+    {
+      "_id": "req_chat_turn2",
+      "_type": "request",
+      "parentId": "fld_chat",
+      "name": "Chat – turn 2",
+      "method": "POST",
+      "url": "{{ _.base_url }}/chat",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"What is my name?\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      }
+    },
+    {
+      "_id": "req_chat_no_session",
+      "_type": "request",
+      "parentId": "fld_chat",
+      "name": "Chat – missing session_id (400)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/chat",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Hello\"\n}"
+      }
+    },
+    {
+      "_id": "fld_stream",
+      "_type": "request_group",
+      "parentId": "wrk_llm_gateway",
+      "name": "Streaming (SSE)"
+    },
+    {
+      "_id": "req_stream_openai",
+      "_type": "request",
+      "parentId": "fld_stream",
+      "name": "Stream – openai",
+      "method": "POST",
+      "url": "{{ _.base_url }}/openai/stream",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Tell me a short story.\"\n}"
+      }
+    },
+    {
+      "_id": "req_stream_anthropic",
+      "_type": "request",
+      "parentId": "fld_stream",
+      "name": "Stream – anthropic",
+      "method": "POST",
+      "url": "{{ _.base_url }}/anthropic/stream",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "Accept", "value": "text/event-stream" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Explain gravity.\"\n}"
+      }
+    },
+    {
+      "_id": "fld_structured",
+      "_type": "request_group",
+      "parentId": "wrk_llm_gateway",
+      "name": "Structured Output"
+    },
+    {
+      "_id": "req_extract",
+      "_type": "request",
+      "parentId": "fld_structured",
+      "name": "Extract – structured JSON",
+      "method": "POST",
+      "url": "{{ _.base_url }}/openai/extract",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Analyse the sentiment of: 'Spring AI is absolutely fantastic for building LLM apps!'\"\n}"
+      }
+    }
+  ]
+}
