@@ -1,3 +1,13 @@
+app:
+  metadata:
+    project-name: LLM Gateway
+    description: Reactive Spring Boot gateway for OpenAI, Anthropic, Ollama, Google Gemini, Cohere and HuggingFace
+    group-id: com.llm.gateway
+    artifact-id: llm-gateway
+    project-version: 0.0.1-SNAPSHOT
+    spring-ai-version: 2.0.0-M8
+    database: PostgreSQL 17
+
 server:
   port: 8080
 
@@ -6,6 +16,10 @@ spring:
     name: llm-gateway
   main:
     web-application-type: reactive
+  # Disable Spring Boot's Docker Compose auto-management; containers are started separately.
+  docker:
+    compose:
+      enabled: false
   webflux:
     base-path: /llm
   data:
@@ -22,25 +36,35 @@ spring:
           min-idle: 2
   # R2DBC – reactive PostgreSQL used by ApiKeyService at runtime
   r2dbc:
-    url: r2dbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:llmgateway}
-    username: ${POSTGRES_USER:llmgateway}
-    password: ${POSTGRES_PASSWORD:secret}
+    url: r2dbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:spring_ai}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:postgres}
     pool:
-      initial-size: 2
+      initial-size: 1
       max-size: 10
+      max-idle-time: 30m
+      validation-query: SELECT 1
   # JDBC datasource used ONLY by Flyway at startup (not used by the app at runtime)
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:llmgateway}
-    username: ${POSTGRES_USER:llmgateway}
-    password: ${POSTGRES_PASSWORD:secret}
-    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:spring_ai}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:postgres}
   flyway:
     enabled: true
     url: ${spring.datasource.url}
     user: ${spring.datasource.username}
     password: ${spring.datasource.password}
     locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+    baseline-description: existing schema
   ai:
+    # Disable Spring AI's own per-provider retry — the gateway's auto-failover
+    # chain handles retries at a higher level. Keeping Spring AI retry enabled
+    # causes each failing provider to block for 2s+4s+8s before we can move on.
+    retry:
+      max-attempts: 1
+      on-http-codes: 429   # only retry on rate-limit; failover handles everything else
     openai:
       api-key: ${OPENAI_API_KEY:sk-placeholder}
       chat:
@@ -185,3 +209,12 @@ llm:
       block-on-violation: ${LLM_BLOCK_ON_VIOLATION:true}
   request:
     timeout-seconds: ${LLM_REQUEST_TIMEOUT_SECONDS:30}
+  auto-failover:
+    # When enabled, /query and /chat automatically try the next provider on auth/config errors.
+    # The /failover endpoint always does explicit failover regardless of this setting.
+    enabled: ${LLM_AUTO_FAILOVER_ENABLED:true}
+    # Ordered list of providers tried when the primary provider fails.
+    order: ${LLM_AUTO_FAILOVER_ORDER:openai,anthropic,google,cohere,huggingface,ollama}
+    # Max seconds to wait per provider during failover before skipping to the next.
+    # Keeps the overall chain fast even when one provider is slow or hanging.
+    provider-timeout-seconds: ${LLM_AUTO_FAILOVER_PROVIDER_TIMEOUT:10}

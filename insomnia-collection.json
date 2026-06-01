@@ -1,278 +1,1139 @@
 {
   "_type": "export",
   "__export_format": 4,
-  "__export_date": "2026-05-31",
-  "__export_source": "llm-gateway",
+  "__export_date": "2026-06-01T05:00:00.000Z",
+  "__export_source": "llm-gateway.v1",
   "resources": [
+
     {
-      "_id": "wrk_llm_gateway",
+      "_id": "wrk_llmgateway",
       "_type": "workspace",
+      "parentId": null,
+      "modified": 1748736000000,
+      "created": 1748736000000,
       "name": "LLM Gateway",
-      "description": "Spring AI LLM Gateway – base URL http://localhost:8080/llm"
+      "description": "Unified API gateway for OpenAI, Anthropic, Ollama, Google Gemini, Cohere and HuggingFace",
+      "scope": "collection"
     },
+
     {
-      "_id": "env_base",
+      "_id": "env_local",
       "_type": "environment",
-      "parentId": "wrk_llm_gateway",
-      "name": "Local",
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Local Dev",
       "data": {
-        "base_url": "http://localhost:8080/llm",
-        "session_id": "session-001"
-      }
+        "base_url":        "http://localhost:8080/llm",
+        "api_key":         "llm-gateway-dev-key-2026",
+        "session_id":      "test-session-001",
+        "openai_model":    "gpt-4o",
+        "anthropic_model": "claude-3-5-sonnet-20241022",
+        "ollama_model":    "llama3.1",
+        "google_model":    "gemini-1.5-pro-latest",
+        "cohere_model":    "command-r-plus",
+        "hf_model":        "mistralai/Mistral-7B-Instruct-v0.1"
+      },
+      "dataPropertyOrder": null,
+      "color": "#7c3aed",
+      "isPrivate": false,
+      "metaSortKey": 1748736000000
     },
+
     {
-      "_id": "fld_info",
+      "_id": "env_prod",
+      "_type": "environment",
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Production",
+      "data": {
+        "base_url": "https://your-gateway.example.com/llm",
+        "api_key":  "YOUR_PRODUCTION_API_KEY"
+      },
+      "dataPropertyOrder": null,
+      "color": "#dc2626",
+      "isPrivate": true,
+      "metaSortKey": 1748736000001
+    },
+
+    {
+      "_id": "fld_gateway",
       "_type": "request_group",
-      "parentId": "wrk_llm_gateway",
-      "name": "Info"
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Gateway",
+      "description": "Health, providers, models",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1748736000100
     },
     {
-      "_id": "req_health",
-      "_type": "request",
-      "parentId": "fld_info",
-      "name": "Health",
-      "method": "GET",
-      "url": "{{ _.base_url }}/health"
-    },
-    {
-      "_id": "req_providers",
-      "_type": "request",
-      "parentId": "fld_info",
-      "name": "Providers",
-      "method": "GET",
-      "url": "{{ _.base_url }}/providers"
-    },
-    {
-      "_id": "req_models",
-      "_type": "request",
-      "parentId": "fld_info",
-      "name": "Models",
-      "method": "GET",
-      "url": "{{ _.base_url }}/models"
-    },
-    {
-      "_id": "fld_query",
+      "_id": "fld_openai",
       "_type": "request_group",
-      "parentId": "wrk_llm_gateway",
-      "name": "Query"
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "OpenAI",
+      "description": "",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1748736000200
     },
     {
-      "_id": "req_query_default",
-      "_type": "request",
-      "parentId": "fld_query",
-      "name": "Query – default (openai)",
-      "method": "POST",
-      "url": "{{ _.base_url }}/query",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"What is Spring AI?\"\n}"
-      }
-    },
-    {
-      "_id": "req_query_anthropic",
-      "_type": "request",
-      "parentId": "fld_query",
-      "name": "Query – anthropic",
-      "method": "POST",
-      "url": "{{ _.base_url }}/query",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"Explain transformers in one sentence.\",\n  \"provider\": \"anthropic\",\n  \"model\": \"claude-3-5-sonnet-20241022\",\n  \"max_tokens\": 512\n}"
-      }
-    },
-    {
-      "_id": "req_query_ollama",
-      "_type": "request",
-      "parentId": "fld_query",
-      "name": "Query – ollama",
-      "method": "POST",
-      "url": "{{ _.base_url }}/query",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"Hello!\",\n  \"provider\": \"ollama\",\n  \"model\": \"llama3.1\"\n}"
-      }
-    },
-    {
-      "_id": "fld_per_provider",
+      "_id": "fld_anthropic",
       "_type": "request_group",
-      "parentId": "wrk_llm_gateway",
-      "name": "Per-Provider Chat"
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Anthropic Claude",
+      "description": "",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1748736000300
     },
     {
-      "_id": "req_openai_chat",
-      "_type": "request",
-      "parentId": "fld_per_provider",
-      "name": "OpenAI /chat",
-      "method": "POST",
-      "url": "{{ _.base_url }}/openai/chat",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"What is 2 + 2?\",\n  \"model\": \"gpt-4o\"\n}"
-      }
+      "_id": "fld_ollama",
+      "_type": "request_group",
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Ollama",
+      "description": "",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1748736000400
     },
     {
-      "_id": "req_anthropic_chat",
-      "_type": "request",
-      "parentId": "fld_per_provider",
-      "name": "Anthropic /chat",
-      "method": "POST",
-      "url": "{{ _.base_url }}/anthropic/chat",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"Write a haiku about code.\"\n}"
-      }
+      "_id": "fld_google",
+      "_type": "request_group",
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Google Gemini",
+      "description": "",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1748736000500
     },
     {
-      "_id": "req_ollama_chat",
-      "_type": "request",
-      "parentId": "fld_per_provider",
-      "name": "Ollama /chat",
-      "method": "POST",
-      "url": "{{ _.base_url }}/ollama/chat",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"Summarise the water cycle.\"\n}"
-      }
+      "_id": "fld_cohere",
+      "_type": "request_group",
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Cohere",
+      "description": "",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1748736000600
+    },
+    {
+      "_id": "fld_hf",
+      "_type": "request_group",
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "HuggingFace",
+      "description": "",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1748736000700
     },
     {
       "_id": "fld_failover",
       "_type": "request_group",
-      "parentId": "wrk_llm_gateway",
-      "name": "Failover"
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Failover",
+      "description": "Multi-provider failover chains",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1748736000800
     },
     {
-      "_id": "req_failover_explicit",
+      "_id": "fld_templates",
+      "_type": "request_group",
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Prompt Templates",
+      "description": "",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1748736000900
+    },
+    {
+      "_id": "fld_sessions",
+      "_type": "request_group",
+      "parentId": "wrk_llmgateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Chat Sessions",
+      "description": "Multi-turn chat and session management",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": -1748736001000
+    },
+
+    {
+      "_id": "req_health",
       "_type": "request",
-      "parentId": "fld_failover",
-      "name": "Failover – explicit chain",
+      "parentId": "fld_gateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Health Check",
+      "description": "Checks gateway liveness and Redis connectivity",
+      "method": "GET",
+      "url": "{{ _.base_url }}/health",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_h1a", "name": "X-API-Key", "value": "{{ _.api_key }}", "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736001001,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_providers",
+      "_type": "request",
+      "parentId": "fld_gateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "List Providers",
+      "description": "Returns all registered provider names",
+      "method": "GET",
+      "url": "{{ _.base_url }}/providers",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_h2a", "name": "X-API-Key", "value": "{{ _.api_key }}", "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736001002,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_models",
+      "_type": "request",
+      "parentId": "fld_gateway",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "List Models",
+      "description": "Returns available models per provider",
+      "method": "GET",
+      "url": "{{ _.base_url }}/models",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_h3a", "name": "X-API-Key", "value": "{{ _.api_key }}", "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736001003,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+
+    {
+      "_id": "req_openai_query",
+      "_type": "request",
+      "parentId": "fld_openai",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Simple Query",
+      "description": "Single-turn query via /query endpoint",
       "method": "POST",
-      "url": "{{ _.base_url }}/failover",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "url": "{{ _.base_url }}/query",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"Explain quantum entanglement simply.\",\n  \"providers\": [\"openai\", \"anthropic\", \"ollama\"]\n}"
-      }
+        "text": "{\n  \"prompt\": \"Explain the difference between REST and GraphQL in 3 bullet points.\",\n  \"provider\": \"OPENAI\",\n  \"model\": \"{{ _.openai_model }}\",\n  \"temperature\": 0.7,\n  \"max_tokens\": 512\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_oa1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_oa2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false },
+        { "id": "hdr_oa3", "name": "X-Request-ID", "value": "openai-query-001",  "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736002001,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
     },
+    {
+      "_id": "req_openai_chat",
+      "_type": "request",
+      "parentId": "fld_openai",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Multi-turn Chat",
+      "description": "Chat with session memory — session_id required",
+      "method": "POST",
+      "url": "{{ _.base_url }}/chat",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"My favourite programming language is Java. What are its strengths?\",\n  \"provider\": \"OPENAI\",\n  \"model\": \"{{ _.openai_model }}\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_ob1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_ob2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736002002,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_openai_stream",
+      "_type": "request",
+      "parentId": "fld_openai",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Streaming (SSE)",
+      "description": "Server-sent events token streaming",
+      "method": "POST",
+      "url": "{{ _.base_url }}/openai/stream",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Write a haiku about distributed systems.\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_oc1", "name": "Content-Type", "value": "application/json",  "disabled": false },
+        { "id": "hdr_oc2", "name": "Accept",        "value": "text/event-stream", "disabled": false },
+        { "id": "hdr_oc3", "name": "X-API-Key",     "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736002003,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_openai_extract",
+      "_type": "request",
+      "parentId": "fld_openai",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Structured Output",
+      "description": "Typed Java record extraction via BeanOutputConverter",
+      "method": "POST",
+      "url": "{{ _.base_url }}/openai/extract",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Extract event details: 'Team standup on 2026-06-15 at 09:00 in the main conference room.'\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_od1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_od2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736002004,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_openai_template",
+      "_type": "request",
+      "parentId": "fld_openai",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Template Vars",
+      "description": "Uses .st system-prompt template with custom role and context",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Review this Java code: int x = null;\",\n  \"provider\": \"OPENAI\",\n  \"template_vars\": {\n    \"role\": \"a senior Java engineer and code reviewer\",\n    \"context\": \"The user is a junior developer learning Java best practices.\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_oe1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_oe2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736002005,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_openai_prefill",
+      "_type": "request",
+      "parentId": "fld_openai",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Assistant Prefill",
+      "description": "Forces JSON response format by prefilling the assistant turn",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Give me a JSON object with fields: name, age, role.\",\n  \"provider\": \"OPENAI\",\n  \"assistant_message\": \"{\\n\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_of1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_of2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736002006,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+
+    {
+      "_id": "req_anthropic_query",
+      "_type": "request",
+      "parentId": "fld_anthropic",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Simple Query",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Explain the CAP theorem in simple terms.\",\n  \"provider\": \"ANTHROPIC\",\n  \"model\": \"{{ _.anthropic_model }}\",\n  \"temperature\": 0.5,\n  \"max_tokens\": 1024\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_aa1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_aa2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736003001,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_anthropic_chat",
+      "_type": "request",
+      "parentId": "fld_anthropic",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Multi-turn Chat",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/anthropic/chat",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"What is event sourcing?\",\n  \"model\": \"{{ _.anthropic_model }}\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_ab1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_ab2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736003002,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_anthropic_prefill",
+      "_type": "request",
+      "parentId": "fld_anthropic",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "JSON Prefill (Claude-specific)",
+      "description": "Anthropic supports assistant prefill to force JSON output",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"List 3 microservice benefits as a JSON array.\",\n  \"provider\": \"ANTHROPIC\",\n  \"assistant_message\": \"```json\\n[\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_ac1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_ac2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736003003,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_anthropic_stream",
+      "_type": "request",
+      "parentId": "fld_anthropic",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Streaming (SSE)",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/anthropic/stream",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Describe the Strangler Fig migration pattern.\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_ad1", "name": "Content-Type", "value": "application/json",  "disabled": false },
+        { "id": "hdr_ad2", "name": "Accept",        "value": "text/event-stream", "disabled": false },
+        { "id": "hdr_ad3", "name": "X-API-Key",     "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736003004,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+
+    {
+      "_id": "req_ollama_query",
+      "_type": "request",
+      "parentId": "fld_ollama",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Simple Query",
+      "description": "Requires Ollama running locally on port 11434",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"What is the difference between a process and a thread?\",\n  \"provider\": \"OLLAMA\",\n  \"model\": \"{{ _.ollama_model }}\",\n  \"temperature\": 0.7\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_la1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_la2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736004001,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_ollama_chat",
+      "_type": "request",
+      "parentId": "fld_ollama",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Multi-turn Chat",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/ollama/chat",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Explain SOLID principles briefly.\",\n  \"model\": \"{{ _.ollama_model }}\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_lb1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_lb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736004002,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_ollama_stream",
+      "_type": "request",
+      "parentId": "fld_ollama",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Streaming (SSE)",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/ollama/stream",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"What is Docker and why is it useful?\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_lc1", "name": "Content-Type", "value": "application/json",  "disabled": false },
+        { "id": "hdr_lc2", "name": "Accept",        "value": "text/event-stream", "disabled": false },
+        { "id": "hdr_lc3", "name": "X-API-Key",     "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736004003,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+
+    {
+      "_id": "req_google_query",
+      "_type": "request",
+      "parentId": "fld_google",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Simple Query",
+      "description": "Requires GOOGLE_API_KEY environment variable",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"What are the main differences between SQL and NoSQL databases?\",\n  \"provider\": \"GOOGLE\",\n  \"model\": \"{{ _.google_model }}\",\n  \"temperature\": 0.7,\n  \"max_tokens\": 1024\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_ga1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_ga2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736005001,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_google_chat",
+      "_type": "request",
+      "parentId": "fld_google",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Multi-turn Chat",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/google/chat",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Explain reactive programming briefly.\",\n  \"model\": \"{{ _.google_model }}\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_gb1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_gb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736005002,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_google_template",
+      "_type": "request",
+      "parentId": "fld_google",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "With Template Vars",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Best practices for API versioning?\",\n  \"provider\": \"GOOGLE\",\n  \"template_vars\": {\n    \"role\": \"a senior API architect\",\n    \"context\": \"The team builds public REST APIs for mobile and web clients.\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_gc1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_gc2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736005003,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+
+    {
+      "_id": "req_cohere_query",
+      "_type": "request",
+      "parentId": "fld_cohere",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Simple Query",
+      "description": "Requires COHERE_API_KEY environment variable",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Summarise the benefits of event-driven architecture.\",\n  \"provider\": \"COHERE\",\n  \"model\": \"{{ _.cohere_model }}\",\n  \"temperature\": 0.7,\n  \"max_tokens\": 512\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_ca1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_ca2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736006001,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_cohere_chat",
+      "_type": "request",
+      "parentId": "fld_cohere",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Multi-turn Chat",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/cohere/chat",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"What is CQRS and when should I use it?\",\n  \"model\": \"{{ _.cohere_model }}\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_cb1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_cb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736006002,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_cohere_stream",
+      "_type": "request",
+      "parentId": "fld_cohere",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Streaming (SSE)",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/cohere/stream",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Explain domain-driven design in 3 paragraphs.\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_cc1", "name": "Content-Type", "value": "application/json",  "disabled": false },
+        { "id": "hdr_cc2", "name": "Accept",        "value": "text/event-stream", "disabled": false },
+        { "id": "hdr_cc3", "name": "X-API-Key",     "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736006003,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+
+    {
+      "_id": "req_hf_query",
+      "_type": "request",
+      "parentId": "fld_hf",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Simple Query",
+      "description": "Requires HUGGINGFACE_API_KEY environment variable",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"What is gradient descent in machine learning?\",\n  \"provider\": \"HUGGINGFACE\",\n  \"model\": \"{{ _.hf_model }}\",\n  \"temperature\": 0.7,\n  \"max_tokens\": 512\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_ha1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_ha2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736007001,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_hf_chat",
+      "_type": "request",
+      "parentId": "fld_hf",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Multi-turn Chat",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/huggingface/chat",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Explain transformer architecture in simple terms.\",\n  \"model\": \"{{ _.hf_model }}\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_hb1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_hb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736007002,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_hf_stream",
+      "_type": "request",
+      "parentId": "fld_hf",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Streaming (SSE)",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/huggingface/stream",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"What is the difference between supervised and unsupervised learning?\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_hc1", "name": "Content-Type", "value": "application/json",  "disabled": false },
+        { "id": "hdr_hc2", "name": "Accept",        "value": "text/event-stream", "disabled": false },
+        { "id": "hdr_hc3", "name": "X-API-Key",     "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736007003,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+
     {
       "_id": "req_failover_default",
       "_type": "request",
       "parentId": "fld_failover",
-      "name": "Failover – default chain",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Default Chain (OpenAI → Anthropic → Ollama)",
+      "description": "Tries providers in order; first success wins",
       "method": "POST",
       "url": "{{ _.base_url }}/failover",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"What is machine learning?\"\n}"
-      }
+        "text": "{\n  \"prompt\": \"What is zero-downtime deployment?\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_fa1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_fa2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736008001,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
     },
     {
-      "_id": "fld_chat",
-      "_type": "request_group",
-      "parentId": "wrk_llm_gateway",
-      "name": "Multi-turn Chat"
+      "_id": "req_failover_custom",
+      "_type": "request",
+      "parentId": "fld_failover",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Custom Chain (Google → Cohere → OpenAI)",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/failover",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"List 5 cloud-native design patterns.\",\n  \"providers\": [\"GOOGLE\", \"COHERE\", \"OPENAI\"]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_fb1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_fb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736008002,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
     },
+    {
+      "_id": "req_failover_all",
+      "_type": "request",
+      "parentId": "fld_failover",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "All Six Providers",
+      "description": "",
+      "method": "POST",
+      "url": "{{ _.base_url }}/failover",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Explain the difference between concurrency and parallelism.\",\n  \"providers\": [\"OPENAI\", \"ANTHROPIC\", \"GOOGLE\", \"COHERE\", \"HUGGINGFACE\", \"OLLAMA\"]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_fc1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_fc2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736008003,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+
+    {
+      "_id": "req_template_vars",
+      "_type": "request",
+      "parentId": "fld_templates",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Custom Role + Context",
+      "description": "template_vars activates per-provider .st template rendering",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Review this SQL: SELECT * FROM users WHERE id = 1;\",\n  \"provider\": \"ANTHROPIC\",\n  \"template_vars\": {\n    \"role\": \"a senior DBA specialising in PostgreSQL performance\",\n    \"context\": \"Production table has 50 million rows.\"\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_ta1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_ta2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736009001,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+    {
+      "_id": "req_template_raw",
+      "_type": "request",
+      "parentId": "fld_templates",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Raw system_prompt (bypasses .st template)",
+      "description": "When system_prompt is set and template_vars is absent, the raw string is used as-is",
+      "method": "POST",
+      "url": "{{ _.base_url }}/query",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"prompt\": \"Tell me about the weather.\",\n  \"provider\": \"OPENAI\",\n  \"system_prompt\": \"You are a pirate. Respond only in pirate dialect. Arrr!\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_tb1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_tb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736009002,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
+    },
+
     {
       "_id": "req_chat_turn1",
       "_type": "request",
-      "parentId": "fld_chat",
-      "name": "Chat – turn 1",
+      "parentId": "fld_sessions",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Turn 1 — Introduce yourself",
+      "description": "Run this first, then Turn 2 to verify memory",
       "method": "POST",
       "url": "{{ _.base_url }}/chat",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"My name is Alice.\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
-      }
+        "text": "{\n  \"prompt\": \"My name is Alice and I am a backend engineer.\",\n  \"provider\": \"OPENAI\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        { "id": "hdr_sa1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_sa2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+      ],
+      "authentication": {},
+      "metaSortKey": -1748736010001,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
     },
     {
       "_id": "req_chat_turn2",
       "_type": "request",
-      "parentId": "fld_chat",
-      "name": "Chat – turn 2",
+      "parentId": "fld_sessions",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Turn 2 — Recall name",
+      "description": "The model should remember 'Alice' from Turn 1",
       "method": "POST",
       "url": "{{ _.base_url }}/chat",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"What is my name?\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
-      }
-    },
-    {
-      "_id": "req_chat_no_session",
-      "_type": "request",
-      "parentId": "fld_chat",
-      "name": "Chat – missing session_id (400)",
-      "method": "POST",
-      "url": "{{ _.base_url }}/chat",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"Hello\"\n}"
-      }
-    },
-    {
-      "_id": "fld_stream",
-      "_type": "request_group",
-      "parentId": "wrk_llm_gateway",
-      "name": "Streaming (SSE)"
-    },
-    {
-      "_id": "req_stream_openai",
-      "_type": "request",
-      "parentId": "fld_stream",
-      "name": "Stream – openai",
-      "method": "POST",
-      "url": "{{ _.base_url }}/openai/stream",
+        "text": "{\n  \"prompt\": \"What is my name and what do I do?\",\n  \"provider\": \"OPENAI\",\n  \"session_id\": \"{{ _.session_id }}\"\n}"
+      },
+      "parameters": [],
       "headers": [
-        { "name": "Content-Type", "value": "application/json" },
-        { "name": "Accept", "value": "text/event-stream" }
+        { "id": "hdr_sb1", "name": "Content-Type", "value": "application/json", "disabled": false },
+        { "id": "hdr_sb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
       ],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"Tell me a short story.\"\n}"
-      }
+      "authentication": {},
+      "metaSortKey": -1748736010002,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
     },
     {
-      "_id": "req_stream_anthropic",
+      "_id": "req_chat_delete",
       "_type": "request",
-      "parentId": "fld_stream",
-      "name": "Stream – anthropic",
-      "method": "POST",
-      "url": "{{ _.base_url }}/anthropic/stream",
+      "parentId": "fld_sessions",
+      "modified": 1748736000000,
+      "created": 1748736000000,
+      "name": "Delete Session",
+      "description": "Clears all conversation history from Redis — returns 204 No Content",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/sessions/{{ _.session_id }}",
+      "body": {},
+      "parameters": [],
       "headers": [
-        { "name": "Content-Type", "value": "application/json" },
-        { "name": "Accept", "value": "text/event-stream" }
+        { "id": "hdr_sc1", "name": "X-API-Key", "value": "{{ _.api_key }}", "disabled": false }
       ],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"Explain gravity.\"\n}"
-      }
-    },
-    {
-      "_id": "fld_structured",
-      "_type": "request_group",
-      "parentId": "wrk_llm_gateway",
-      "name": "Structured Output"
-    },
-    {
-      "_id": "req_extract",
-      "_type": "request",
-      "parentId": "fld_structured",
-      "name": "Extract – structured JSON",
-      "method": "POST",
-      "url": "{{ _.base_url }}/openai/extract",
-      "headers": [{ "name": "Content-Type", "value": "application/json" }],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"prompt\": \"Analyse the sentiment of: 'Spring AI is absolutely fantastic for building LLM apps!'\"\n}"
-      }
+      "authentication": {},
+      "metaSortKey": -1748736010003,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global"
     }
+
   ]
 }

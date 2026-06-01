@@ -153,7 +153,13 @@
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- JDBC PostgreSQL – used only by Flyway at startup -->
+		<!-- JDBC starter + PostgreSQL driver – used only by Flyway at startup -->
+		<!-- spring-boot-starter-jdbc is required so DataSourceAutoConfiguration creates a  -->
+		<!-- DataSource bean that FlywayAutoConfiguration can consume in a reactive app.    -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-jdbc</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>

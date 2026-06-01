@@ -49,7 +49,8 @@ public class LlmHandler {
                     String provider = request.getProvider() != null
                             ? request.getProvider().key() : LlmProvider.OPENAI.key();
                     log.info("HANDLER | query | provider={} | session={} | cid={}", provider, request.getSessionId(), cid);
-                    return Mono.fromCallable(() -> facade.execute(provider, request))
+                    // Auto-failover: if OpenAI key is wrong, gateway silently routes to next provider
+                    return Mono.fromCallable(() -> facade.executeWithAutoFailover(provider, request))
                             .subscribeOn(Schedulers.boundedElastic())
                             .timeout(Duration.ofSeconds(timeoutSeconds));
                 })
@@ -104,7 +105,8 @@ public class LlmHandler {
                     String provider = request.getProvider() != null
                             ? request.getProvider().key() : LlmProvider.OPENAI.key();
                     log.info("HANDLER | chat | provider={} | session={} | cid={}", provider, request.getSessionId(), cid);
-                    return Mono.fromCallable(() -> facade.execute(provider, request))
+                    // Auto-failover: auth/config errors silently route to next provider
+                    return Mono.fromCallable(() -> facade.executeWithAutoFailover(provider, request))
                             .subscribeOn(Schedulers.boundedElastic())
                             .timeout(Duration.ofSeconds(timeoutSeconds))
                             .flatMap(resp -> ok(resp, cid));

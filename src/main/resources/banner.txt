@@ -7,7 +7,7 @@
         | |                  __/ |                                                             __/ |
         |_|                 |___/                                                             |___/
 
-Spring-AI-Chat
+LLM Gateway — Unified AI Provider API
 
 :: Project Metadata ::
 - Project Name      : ${app.metadata.project-name}

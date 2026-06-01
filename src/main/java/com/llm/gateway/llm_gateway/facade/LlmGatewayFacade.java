@@ -20,13 +20,19 @@ import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -62,6 +68,15 @@ public class LlmGatewayFacade {
     @Autowired(required = false)
     @Nullable
     private OpenAiService openAiService;
+
+    @Value("${llm.auto-failover.enabled:true}")
+    private boolean autoFailoverEnabled;
+
+    @Value("${llm.auto-failover.order:openai,anthropic,google,cohere,huggingface,ollama}")
+    private String autoFailoverOrderRaw;
+
+    @Value("${llm.auto-failover.provider-timeout-seconds:10}")
+    private int providerTimeoutSeconds;
 
     public LlmGatewayFacade(List<LlmServiceProvider> providerList,
                              PromptSanitizer sanitizer,
@@ -225,6 +240,150 @@ public class LlmGatewayFacade {
         metricsService.recordError("failover", "ALL_PROVIDERS_EXHAUSTED");
         String detail = lastException != null ? lastException.getMessage() : "all providers returned errors";
         return errorResponse("failover", "All providers exhausted " + providerChain + ": " + detail);
+    }
+
+    /**
+     * Executes against the preferred provider; if the provider fails with an
+     * auth/config/connectivity error AND auto-failover is enabled, the gateway
+     * silently logs the failure and retries each provider in
+     * {@code llm.auto-failover.order} until one succeeds.
+     *
+     * Handles two failure modes:
+     *  - Thrown exception (provider SDK throws directly)
+     *  - Soft error (service catches internally and returns LlmResponse.error)
+     *
+     * Client prompt rejections (injection detected, topic blocked) are never
+     * failed-over — they always propagate back to the caller.
+     */
+    public LlmResponse executeWithAutoFailover(String preferredProvider, LlmRequest request) {
+        LlmResponse primaryResponse = null;
+        boolean failoverNeeded = false;
+
+        try {
+            primaryResponse = execute(preferredProvider, request);
+
+            // Services catch exceptions internally and return them as LlmResponse.error.
+            // Detect auth/config errors in the soft-error field and trigger failover.
+            if (primaryResponse.getError() != null && isFailoverWorthy(primaryResponse.getError())) {
+                log.warn("AUTO_FAILOVER | provider={} returned auth/config error — trying alternatives | error={}",
+                        preferredProvider, primaryResponse.getError());
+                metricsService.recordError(preferredProvider, "AUTO_FAILOVER_TRIGGERED");
+                failoverNeeded = true;
+            }
+        } catch (Exception ex) {
+            if (!autoFailoverEnabled || !isFailoverWorthy(ex)) {
+                throw ex;
+            }
+            log.warn("AUTO_FAILOVER | provider={} threw {} — trying alternatives | reason={}",
+                    preferredProvider, ex.getClass().getSimpleName(), rootMessage(ex));
+            metricsService.recordError(preferredProvider, "AUTO_FAILOVER_TRIGGERED");
+            failoverNeeded = true;
+        }
+
+        if (!autoFailoverEnabled || !failoverNeeded) {
+            return primaryResponse;
+        }
+
+        // Try each provider in the configured failover order, skipping the failed one
+        List<String> order = Arrays.stream(autoFailoverOrderRaw.split(","))
+                .map(String::trim).map(String::toLowerCase).toList();
+
+        for (String candidate : order) {
+            if (candidate.equalsIgnoreCase(preferredProvider)) continue;
+            if (!providers.containsKey(candidate)) continue;
+
+            log.info("AUTO_FAILOVER | trying provider={} (timeout={}s)", candidate, providerTimeoutSeconds);
+            try {
+                // Per-provider timeout prevents one slow/hung provider from
+                // consuming the entire gateway timeout and blocking the chain.
+                LlmResponse candidateResponse = CompletableFuture
+                        .supplyAsync(() -> execute(candidate, request))
+                        .orTimeout(providerTimeoutSeconds, TimeUnit.SECONDS)
+                        .get();
+
+                if (candidateResponse.getError() == null) {
+                    log.info("AUTO_FAILOVER | succeeded with provider={}", candidate);
+                    candidateResponse.setProvider(candidateResponse.getProvider()
+                            + " [auto-failover from " + preferredProvider + "]");
+                    return candidateResponse;
+                }
+
+                if (isFailoverWorthy(candidateResponse.getError())) {
+                    log.warn("AUTO_FAILOVER | provider={} failed, continuing | error={}",
+                            candidate, candidateResponse.getError());
+                    continue;
+                }
+
+                // Provider returned a non-retryable error (e.g. prompt too long)
+                return candidateResponse;
+
+            } catch (ExecutionException ee) {
+                // orTimeout() wraps TimeoutException inside ExecutionException
+                if (ee.getCause() instanceof java.util.concurrent.TimeoutException) {
+                    log.warn("AUTO_FAILOVER | provider={} timed out after {}s, skipping", candidate, providerTimeoutSeconds);
+                    metricsService.recordError(candidate, "FAILOVER_TIMEOUT");
+                    continue;
+                }
+                Exception cause = ee.getCause() instanceof Exception ex ? ex : ee;
+                if (isFailoverWorthy(cause)) {
+                    log.warn("AUTO_FAILOVER | provider={} failed: {}", candidate, rootMessage(cause));
+                } else {
+                    throw cause instanceof RuntimeException re ? re : new RuntimeException(cause);
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+
+        metricsService.recordError("auto-failover", "ALL_PROVIDERS_EXHAUSTED");
+        return errorResponse(preferredProvider,
+                "All providers exhausted during auto-failover. Check API key configurations.");
+    }
+
+    /**
+     * True when a thrown exception should trigger failover to the next provider.
+     *
+     * Strategy: failover on ANY provider-side error (HTTP 4xx/5xx, connection
+     * problems, SDK exceptions). Only client-side prompt rejections stop the chain
+     * — those will fail identically on every provider.
+     */
+    private boolean isFailoverWorthy(Exception ex) {
+        // Client errors — the same prompt will be rejected everywhere, don't failover
+        if (ex instanceof PromptValidationException) return false;
+        if (ex instanceof IllegalArgumentException)  return false;
+
+        // Every other exception is a provider-side problem → try the next one
+        return true;
+    }
+
+    /**
+     * True when a soft-error string (LlmResponse.error) should trigger failover.
+     *
+     * Prompt-rejection messages come from our own guardrail advisors and include
+     * specific keywords. Everything else is a provider-side failure.
+     */
+    private boolean isFailoverWorthy(String errorMsg) {
+        if (errorMsg == null || errorMsg.isBlank()) return false;
+        String msg = errorMsg.toLowerCase();
+        // These originate from our guardrail chain — the prompt is the problem, not the provider
+        if (msg.contains("prompt validation")
+                || msg.contains("injection detected")
+                || msg.contains("toxic content")
+                || msg.contains("restricted topic")
+                || msg.contains("harmful")) {
+            return false;
+        }
+        // Any other error from a provider → failover
+        return true;
+    }
+
+    private static String rootMessage(Exception ex) {
+        Throwable cause = ex;
+        while (cause.getCause() != null) cause = cause.getCause();
+        return cause.getMessage() != null ? cause.getMessage()
+                : ex.getMessage() != null ? ex.getMessage()
+                : ex.getClass().getSimpleName();
     }
 
     /**

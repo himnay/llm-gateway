@@ -77,25 +77,25 @@ Client
 
 ## Tech Stack
 
-| Layer           | Technology                                          |
-|-----------------|-----------------------------------------------------|
-| Runtime         | Java 21, Spring Boot 4.0.6                          |
-| Web             | Spring WebFlux (reactive, non-blocking)             |
-| Security        | Spring Security WebFlux + PostgreSQL API key table  |
-| LLM Integration | Spring AI 2.0.0-M8                                  |
-| LLM Providers   | OpenAI, Anthropic Claude, Ollama                    |
-| Cache + Memory  | Redis (Spring Data Redis / Lettuce)                 |
-| Database        | PostgreSQL 16 (R2DBC reactive + JDBC for Flyway)    |
-| Migrations      | Flyway                                              |
-| Resilience      | Resilience4j (Circuit Breaker, Retry, Rate Limiter) |
-| Observability   | Micrometer + OTEL, Prometheus, Grafana Tempo        |
-| Build           | Maven 3.9+                                          |
+| Layer            | Technology                                                           |
+|------------------|----------------------------------------------------------------------|
+| Runtime          | Java 21, Spring Boot 4.0.6                                           |
+| Web              | Spring WebFlux (reactive, non-blocking)                              |
+| Security         | Spring Security WebFlux + PostgreSQL API key table                   |
+| LLM Integration  | Spring AI 2.0.0-M8                                                   |
+| LLM Providers    | OpenAI, Anthropic Claude, Ollama, Google Gemini, Cohere, HuggingFace |
+| Cache + Memory   | Redis (Spring Data Redis / Lettuce)                                  |
+| Database         | PostgreSQL 16 (R2DBC reactive + JDBC for Flyway)                     |
+| Migrations       | Flyway                                                               |
+| Resilience       | Resilience4j (Circuit Breaker, Retry, Rate Limiter)                  |
+| Observability    | Micrometer + OTEL, Prometheus, Grafana Tempo                         |
+| Build            | Maven 3.9+                                                           |
 
 ---
 
 ## Features
 
-- **Multi-provider routing** — single API, routed to OpenAI, Anthropic, or Ollama
+- **Multi-provider routing** — single API, routed to OpenAI, Anthropic, Ollama, Google Gemini, Cohere, or HuggingFace
 - **Failover chain** — tries the next provider automatically on failure
 - **Multi-turn chat** — Redis-backed conversation memory per `session_id`
 - **Session management** — `DELETE /sessions/{sessionId}` clears history
@@ -650,6 +650,62 @@ docker/
 └── tempo.yaml
 compose.yaml
 ```
+
+---
+
+## Insomnia Collection
+
+Import `insomnia-collection.json` into Insomnia to get all endpoints pre-configured.
+
+**Environment variables in the collection:**
+
+| Variable          | Default                              | Description            |
+|-------------------|--------------------------------------|------------------------|
+| `base_url`        | `http://localhost:8080/llm`          | Gateway base URL       |
+| `api_key`         | `llm-gateway-dev-key-2026`           | X-API-Key header value |
+| `session_id`      | `test-session-001`                   | Chat session ID        |
+| `openai_model`    | `gpt-4o`                             | OpenAI model           |
+| `anthropic_model` | `claude-3-5-sonnet-20241022`         | Claude model           |
+| `google_model`    | `gemini-1.5-pro-latest`              | Gemini model           |
+| `cohere_model`    | `command-r-plus`                     | Cohere model           |
+| `hf_model`        | `mistralai/Mistral-7B-Instruct-v0.1` | HuggingFace model      |
+
+**Folders in the collection:**
+
+| Folder              | Requests                                                       |
+|---------------------|----------------------------------------------------------------|
+| 📋 Gateway          | Health, List Providers, List Models                            |
+| 🤖 OpenAI           | Query, Chat, Stream, Structured Output, Template Vars, Prefill |
+| 🧠 Anthropic        | Query, Chat, Stream, JSON Prefill                              |
+| 🦙 Ollama           | Query, Chat, Stream                                            |
+| ✨ Google Gemini     | Query, Chat, Template Vars                                     |
+| 🌊 Cohere           | Query, Chat, Stream                                            |
+| 🤗 HuggingFace      | Query, Chat, Stream                                            |
+| 🔄 Failover         | Default chain, Custom chain, All six providers                 |
+| 📝 Prompt Templates | Template vars, Raw system_prompt                               |
+| 💬 Chat Sessions    | Turn 1, Turn 2, Delete session                                 |
+
+---
+
+## Provider API Details
+
+### OpenAI / Anthropic / Ollama
+Implemented via Spring AI `ChatClient` — full guardrail chain, chat memory, streaming, structured output, tool calling.
+
+### Google Gemini
+Uses the Google Generative Language REST API (`v1beta`). System prompts are passed via `systemInstruction` (Gemini's native field). Supports `gemini-1.5-pro-latest`, `gemini-1.5-flash-latest`, `gemini-2.0-flash`, and other Gemini models.
+
+**Required env var:** `GOOGLE_API_KEY`
+
+### Cohere
+Uses the Cohere v2 chat API (`https://api.cohere.com/v2/chat`) with the messages format (system + user turns). Supports `command-r-plus`, `command-r`, `command-light`.
+
+**Required env var:** `COHERE_API_KEY`
+
+### HuggingFace
+Uses the HuggingFace Serverless Inference API with its OpenAI-compatible endpoint (`https://api-inference.huggingface.co/v1/chat/completions`). Works with any model on the HuggingFace Hub that supports the chat completion task (e.g. Mistral, Llama, Qwen, Phi).
+
+**Required env var:** `HUGGINGFACE_API_KEY`
 
 ---
 
