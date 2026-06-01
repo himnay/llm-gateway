@@ -153,9 +153,12 @@
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- JDBC starter + PostgreSQL driver – used only by Flyway at startup -->
-		<!-- spring-boot-starter-jdbc is required so DataSourceAutoConfiguration creates a  -->
-		<!-- DataSource bean that FlywayAutoConfiguration can consume in a reactive app.    -->
+		<!-- JDBC starter + PostgreSQL driver – Flyway runs over JDBC at startup.            -->
+		<!-- NOTE (Spring Boot 4): because an R2DBC ConnectionFactory bean is present,        -->
+		<!-- DataSourceAutoConfiguration backs off (@ConditionalOnMissingBean ConnectionFactory) -->
+		<!-- and NO shared JDBC DataSource bean is created. Flyway therefore builds its own    -->
+		<!-- dedicated datasource from the spring.flyway.url/user/password properties. These    -->
+		<!-- deps supply the JDBC driver + Hikari pool that Flyway's datasource needs.         -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-jdbc</artifactId>
@@ -166,7 +169,15 @@
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- Flyway – schema migrations -->
+		<!-- Flyway – schema migrations.                                                     -->
+		<!-- spring-boot-flyway provides FlywayAutoConfiguration. In Spring Boot 4 the        -->
+		<!-- per-technology auto-configurations were split out of spring-boot-autoconfigure   -->
+		<!-- into dedicated modules, so flyway-core ALONE no longer triggers auto-config —     -->
+		<!-- without this module Flyway is silently never run and no tables are created.       -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-flyway</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-core</artifactId>

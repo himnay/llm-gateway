@@ -16,8 +16,7 @@ spring:
     name: llm-gateway
   main:
     web-application-type: reactive
-  # Disable Spring Boot's Docker Compose auto-management; containers are started separately.
-  docker:
+  docker:            # Disable Spring Boot's Docker Compose auto-management; containers are started separately.
     compose:
       enabled: false
   webflux:
@@ -98,6 +97,15 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      # Publish Prometheus histogram buckets so Grafana can compute p50/p95/p99
+      # latency — REST API turnaround time + per-provider LLM call latency.
+      percentiles-histogram:
+        http.server.requests: true
+        llm.gateway.execution: true
+        llm.request.latency.seconds: true
+      slo:
+        http.server.requests: 50ms,100ms,200ms,300ms,500ms,1s,2s,5s
 
 logging:
   pattern:
@@ -201,12 +209,41 @@ llm:
       enabled: ${LLM_RESPONSE_FORMAT_ENABLED:true}
       min-length: ${LLM_RESPONSE_MIN_LENGTH:10}
       max-length: ${LLM_RESPONSE_MAX_LENGTH:50000}
+    # ────────────────────────────────────────────────────────────────────────────
+    # Externalised guardrail PATTERNS — bound to GuardrailPatternProperties.
+    # These power the sensitive-data redactor, the prompt-injection sanitizer and the
+    # toxicity filter. Add or remove entries here WITHOUT code changes. If a list/map
+    # below is omitted, the built-in fail-safe defaults (in GuardrailPatternProperties)
+    # apply; if you specify one, it REPLACES the default for that category.
+    #
+    # Uncomment and edit to customise. Use single quotes so regex backslashes are literal.
+    #
+    # patterns:
+    #   sensitive-data:                 # type-name -> regex  (name becomes the [PLACEHOLDER])
+    #     email: '[\w.%+\-]+@[\w.\-]+\.[A-Za-z]{2,}'
+    #     api-key: '\b(?:sk|sk-ant|sk-proj|rk|pk)-[A-Za-z0-9_\-]{16,}\b'
+    #     credit-card: '\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\b'
+    #   injection:                      # hard-block regexes (match -> HTTP 400)
+    #     - '(?i)\bignore\s+(?:all\s+)?previous\s+instructions?\b'
+    #     - '(?i)\bjailbreak\b'
+    #   strip:                          # removed but request continues
+    #     - '(?is)<script[^>]*>.*?</script>'
+    #   toxic-keywords:                 # lower-cased substrings
+    #     - 'how to make a bomb'
+    #     - 'create malware'
   security:
     sanitization:
       enabled: ${LLM_SANITIZATION_ENABLED:true}
       max-prompt-length: ${LLM_MAX_PROMPT_LENGTH:10000}
       block-injection-patterns: ${LLM_BLOCK_INJECTION:true}
       block-on-violation: ${LLM_BLOCK_ON_VIOLATION:true}
+    # Provider-agnostic sensitive-data guard (PII + secrets). Applied in the gateway
+    # facade for EVERY provider — including the custom REST providers that bypass the
+    # Spring AI advisor chain — so nothing sensitive is sent to an LLM, cached, or logged.
+    sensitive-data:
+      enabled: ${LLM_SENSITIVE_DATA_ENABLED:true}
+      redact-prompt: ${LLM_SENSITIVE_DATA_REDACT_PROMPT:true}     # redact before sending to provider
+      redact-response: ${LLM_SENSITIVE_DATA_REDACT_RESPONSE:true} # redact before returning to caller
   request:
     timeout-seconds: ${LLM_REQUEST_TIMEOUT_SECONDS:30}
   auto-failover:

@@ -1,6 +1,6 @@
 # LLM Gateway
 
-A production-ready, reactive Spring Boot gateway that provides a single unified API for multiple LLM providers (OpenAI, Anthropic Claude, Ollama). Handles routing, failover, multi-turn chat memory, prompt safety, guardrails, caching, API-key authentication, and full observability out of the box.
+A production-ready, reactive Spring Boot gateway that provides a single unified API for multiple LLM providers (OpenAI, HuggingFace, Cohere, Anthropic Claude, Ollama). Handles routing, failover, multi-turn chat memory, prompt safety, guardrails, caching, API-key authentication, and full observability out of the box.
 
 ---
 
@@ -85,7 +85,7 @@ Client
 | LLM Integration  | Spring AI 2.0.0-M8                                                   |
 | LLM Providers    | OpenAI, Anthropic Claude, Ollama, Google Gemini, Cohere, HuggingFace |
 | Cache + Memory   | Redis (Spring Data Redis / Lettuce)                                  |
-| Database         | PostgreSQL 16 (R2DBC reactive + JDBC for Flyway)                     |
+| Database         | PostgreSQL 17 (R2DBC reactive + JDBC for Flyway)                     |
 | Migrations       | Flyway                                                               |
 | Resilience       | Resilience4j (Circuit Breaker, Retry, Rate Limiter)                  |
 | Observability    | Micrometer + OTEL, Prometheus, Grafana Tempo                         |
@@ -103,6 +103,8 @@ Client
 - **Assistant message prefill** — steer response format without consuming a user turn
 - **API key authentication** — Spring Security WebFlux backed by a PostgreSQL table; SHA-256 hashed keys, expiry support, `last_used` tracking
 - **9-step guardrail chain** — prompt safety, PII redaction, toxicity filter, topic restriction, hallucination monitoring, response format validation
+- **Sensitive-data guard (all providers)** — provider-agnostic PII + secret redaction applied in the facade on both request and response, so nothing sensitive is sent to an LLM, cached, or logged
+- **Externalised guardrail patterns** — all injection / PII / toxicity pattern lists tunable in YAML (`llm.guardrails.patterns.*`) without code changes
 - **Redis prompt cache** — SHA-256 keyed (includes system prompt, template vars, assistant message), configurable TTL
 - **Streaming** — SSE token streaming per provider
 - **Structured output** — typed Java record extraction from LLM responses (via facade for full observability)
@@ -111,7 +113,7 @@ Client
 - **Real health check** — `/health` probes Redis connectivity
 - **Provider enable/disable** — `@ConditionalOnProperty` per service; disabled providers never start
 - **Distributed tracing** — OTEL spans with trace/span IDs in every log line
-- **Prometheus metrics** — request counts, latencies, cache hits, rejections, errors
+- **Prometheus metrics + Grafana dashboard** — calls per provider, REST API turnaround time (`@Timed` + `http.server.requests`), latency percentiles, token usage, cache hits, rejections, errors; importable/auto-provisioned dashboard included
 
 ---
 
@@ -152,6 +154,16 @@ Flyway runs automatically on startup and creates the `api_keys` table with two s
 | Development Key | `llm-gateway-dev-key-2026`   |
 | Admin Key       | `llm-gateway-admin-key-2026` |
 
+> **Spring Boot 4 + Flyway gotcha.** In Spring Boot 4 the per-technology
+> auto-configurations were split out of `spring-boot-autoconfigure` into dedicated
+> modules, so `flyway-core` alone no longer triggers `FlywayAutoConfiguration` — the
+> `org.springframework.boot:spring-boot-flyway` module must be on the classpath (it is,
+> in `pom.xml`). Additionally, because an R2DBC `ConnectionFactory` bean is present,
+> `DataSourceAutoConfiguration` backs off and no shared JDBC `DataSource` is created;
+> Flyway therefore runs over its own dedicated datasource built from the
+> `spring.flyway.url` / `user` / `password` properties. If you ever see an empty
+> `spring_ai` database with no tables, this configuration is what makes migrations run.
+
 ### 3. Build and run
 
 ```bash
@@ -177,7 +189,7 @@ curl -X POST http://localhost:8080/llm/query \
 
 ## Docker Compose
 
-`compose.yaml` includes all infrastructure services:
+`docker-compose.yml` includes all infrastructure services:
 
 ```bash
 # Start everything
@@ -217,9 +229,9 @@ All values can be overridden via environment variables.
 |----------|---------------------|--------------|
 | Host     | `POSTGRES_HOST`     | `localhost`  |
 | Port     | `POSTGRES_PORT`     | `5432`       |
-| Database | `POSTGRES_DB`       | `llmgateway` |
-| Username | `POSTGRES_USER`     | `llmgateway` |
-| Password | `POSTGRES_PASSWORD` | `secret`     |
+| Database | `POSTGRES_DB`       | `spring_ai`  |
+| Username | `POSTGRES_USER`     | `postgres`   |
+| Password | `POSTGRES_PASSWORD` | `postgres`   |
 
 ### Redis
 
@@ -284,9 +296,12 @@ LLM_PROVIDERS_OPENAI_ENABLED=false
 
 | Env Var                    | Default | Description                   |
 |----------------------------|---------|-------------------------------|
-| `GATEWAY_AUTH_ENABLED`     | `false` | Set `true` in production      |
-| `LLM_SANITIZATION_ENABLED` | `true`  | Prompt injection detection    |
-| `LLM_MAX_PROMPT_LENGTH`    | `10000` | Hard cap on prompt characters |
+| `GATEWAY_AUTH_ENABLED`               | `false` | Set `true` in production              |
+| `LLM_SANITIZATION_ENABLED`           | `true`  | Prompt injection detection            |
+| `LLM_MAX_PROMPT_LENGTH`              | `10000` | Hard cap on prompt characters         |
+| `LLM_SENSITIVE_DATA_ENABLED`         | `true`  | PII + secret redaction (all providers)|
+| `LLM_SENSITIVE_DATA_REDACT_PROMPT`   | `true`  | Redact before sending to provider     |
+| `LLM_SENSITIVE_DATA_REDACT_RESPONSE` | `true`  | Redact before returning to caller     |
 
 ### Observability
 
@@ -582,22 +597,90 @@ OUTPUT ◄──
 
 > **Production note:** PII and toxicity detection use regex/keyword lists. For higher accuracy, integrate a dedicated service such as AWS Comprehend, Azure AI Content Safety, or Microsoft Presidio. The hallucination monitor is a heuristic signal — consider RAG for factual grounding.
 
+### Sensitive-data guard (all providers)
+
+The guardrail advisor chain above only runs for the Spring AI **ChatClient** providers
+(OpenAI, Anthropic, Ollama). To guarantee that **no PII or secret is ever sent to an
+LLM, cached, or logged — for every provider** (including the custom REST providers
+Google, Cohere, HuggingFace that bypass the advisor chain) — the `LlmGatewayFacade`
+applies a provider-agnostic `SensitiveDataRedactor`:
+
+- **Inbound** — the prompt is redacted *before* it is forwarded to any provider or
+  written to the cache. Detected spans become typed placeholders (`[EMAIL]`,
+  `[API_KEY]`, `[CREDIT_CARD]`, …).
+- **Outbound** — the model's response is scanned and redacted *before* it is cached or
+  returned to the caller.
+- **Logs** — the gateway only logs prompt **lengths** and redacted placeholders, never
+  raw prompt/response content (Spring AI's `SimpleLoggerAdvisor` stays at INFO, which
+  suppresses full-content DEBUG logging).
+- **Metrics** — `llm_sensitive_data_redactions_total{provider, direction, type}`.
+
+Detected categories: e-mail, phone, credit-card, SSN, IBAN, IP address, passport, plus
+secrets — API keys (`sk-…`), AWS access keys (`AKIA…`), bearer tokens and PEM private keys.
+
+| Env Var                              | Default | Description                              |
+|--------------------------------------|---------|------------------------------------------|
+| `LLM_SENSITIVE_DATA_ENABLED`         | `true`  | Master switch for the sensitive-data guard |
+| `LLM_SENSITIVE_DATA_REDACT_PROMPT`   | `true`  | Redact before sending to the provider    |
+| `LLM_SENSITIVE_DATA_REDACT_RESPONSE` | `true`  | Redact before returning to the caller    |
+
+### Tuning guardrail patterns without code changes
+
+All guardrail pattern lists are externalised in `GuardrailPatternProperties`
+(`llm.guardrails.patterns.*`) so they can be added/removed/edited purely in
+configuration — no recompile:
+
+| Config key                              | Used by                | Form               |
+|-----------------------------------------|------------------------|--------------------|
+| `llm.guardrails.patterns.sensitive-data`| `SensitiveDataRedactor`| `name → regex` map |
+| `llm.guardrails.patterns.injection`     | `PromptSanitizer`      | list of regex      |
+| `llm.guardrails.patterns.strip`         | `PromptSanitizer`      | list of regex      |
+| `llm.guardrails.patterns.toxic-keywords`| `ToxicityFilterAdvisor`| list of substrings |
+
+Sensible, fail-safe defaults ship in code (so protection is never accidentally
+disabled); any value you set in YAML **replaces** that category. See the commented
+example block under `llm.guardrails.patterns` in `application.yaml`. Invalid regexes are
+logged and skipped at startup rather than crashing the app.
+
 ---
 
 ## Observability
 
+> **Full setup guide:** see **[PROMETHEUS_GRAFANA_SETUP.md](PROMETHEUS_GRAFANA_SETUP.md)**
+> for the end-to-end Prometheus + Grafana walkthrough, PromQL examples, and troubleshooting.
+
 ### Prometheus metrics
 
-Exposed at `GET /actuator/prometheus`.
+Exposed at `GET /llm/actuator/prometheus`.
 
-| Metric                  | Labels                   |
-|-------------------------|--------------------------|
-| `llm.requests.total`    | `provider`, `cache_hit`  |
-| `llm.request.latency`   | `provider`               |
-| `llm.prompt.length`     | `provider`               |
-| `llm.cache.hits`        | `provider`               |
-| `llm.errors`            | `provider`, `error_type` |
-| `llm.rejected.requests` | `provider`, `reason`     |
+> **Note the `/llm` prefix** — `spring.webflux.base-path=/llm` also prefixes the actuator
+> endpoints, so the scrape path is `/llm/actuator/prometheus` (configured in
+> `observability/prometheus.yml`).
+
+Custom application metrics (emitted by `LlmMetricsService` + the `@Timed` facade):
+
+| Metric (Prometheus name)        | Type             | Labels                         | Meaning |
+|---------------------------------|------------------|--------------------------------|---------|
+| `llm_provider_calls_total`      | counter          | `provider`, `model`, `outcome` | **Calls routed to each provider** (success/error) |
+| `llm_requests_total`            | counter          | `provider`, `cache_hit`        | Total requests incl. cache hits |
+| `llm_requests_errors_total`     | counter          | `provider`, `error_type`       | Errors by type |
+| `llm_requests_rejected_total`   | counter          | `provider`, `reason`           | Requests blocked by guardrails |
+| `llm_request_latency_seconds`   | histogram        | `provider`                     | Per-provider LLM call latency (p50/p95/p99) |
+| `llm_tokens_total`              | counter          | `provider`, `model`, `type`    | Token usage (prompt/completion/total) |
+| `llm_prompt_length_chars`       | summary          | `provider`                     | Prompt size distribution |
+| `llm_gateway_execution_seconds` | timer (`@Timed`) | `operation`                    | **Gateway turnaround time** (execute / failover / auto-failover) |
+| `http_server_requests_seconds`  | timer (built-in) | `uri`, `method`, `status`      | **REST API turnaround time per endpoint** |
+
+Histogram buckets are enabled for latency metrics (`management.metrics.distribution.percentiles-histogram`)
+so Grafana can compute percentiles.
+
+### Grafana dashboard
+
+An importable dashboard lives at
+`observability/grafana/dashboards/grafana-dashboard-llm-gateway.json`. With Docker Compose
+it is **auto-provisioned** (appears under *Dashboards → LLM Gateway* at <http://localhost:3000>,
+`admin`/`admin`). It visualises calls per provider, REST API turnaround time, latency
+percentiles, token usage, errors, circuit-breaker state, and JVM/system health.
 
 ### Distributed Tracing
 
@@ -605,12 +688,13 @@ Every request creates an OTEL span `llm.request`. Trace and span IDs appear in e
 
 ### Actuator endpoints
 
-| Endpoint                    | Description                               |
-|-----------------------------|-------------------------------------------|
-| `/actuator/health`          | Spring Boot health (includes Redis probe) |
-| `/actuator/prometheus`      | Prometheus scrape                         |
-| `/actuator/circuitbreakers` | Resilience4j state                        |
-| `/actuator/loggers`         | Runtime log level changes                 |
+| Endpoint                        | Description                               |
+|---------------------------------|-------------------------------------------|
+| `/llm/actuator/health`          | Spring Boot health (includes Redis probe) |
+| `/llm/actuator/metrics`         | Browse individual metrics (JSON)          |
+| `/llm/actuator/prometheus`      | Prometheus scrape                         |
+| `/llm/actuator/circuitbreakers` | Resilience4j state                        |
+| `/llm/actuator/loggers`         | Runtime log level changes                 |
 
 ---
 
@@ -621,14 +705,14 @@ src/
 └── main/
     ├── java/com/llm/gateway/llm_gateway/
     │   ├── cache/         PromptCacheService, RedisChatMemoryRepository
-    │   ├── config/        ChatClientConfig, LlmRouterConfig, ObservabilityConfig, ...
+    │   ├── config/        ChatClientConfig, LlmRouterConfig, ObservabilityConfig, GuardrailPatternProperties, ...
     │   ├── dto/           LlmRequest, LlmResponse, LlmProvider, StructuredLlmResponse
     │   ├── exception/     GlobalExceptionHandler, LLMProviderNotSupportedException
     │   ├── facade/        LlmGatewayFacade (execute, executeWithFailover, executeStructured)
     │   ├── guardrail/     9 advisor classes + AdvisorUtils (shared extraction helpers)
     │   ├── handler/       LlmHandler, LlmStreamHandler
     │   ├── observability/ LlmMetricsService
-    │   ├── security/      SecurityConfig, ApiKeyService, PromptSanitizer, ...
+    │   ├── security/      SecurityConfig, ApiKeyService, PromptSanitizer, SensitiveDataRedactor, ...
     │   ├── service/       OpenAiService, AnthropicClaudeService, OllamaService, ...
     │   ├── template/      PromptTemplateService
     │   └── tools/         GatewayTools
@@ -645,10 +729,17 @@ src/
             ├── system-default.st
             └── assistant-starter.st
 
-docker/
-├── prometheus.yml
-└── tempo.yaml
-compose.yaml
+observability/
+├── prometheus.yml                       Prometheus scrape config (/llm/actuator/prometheus)
+├── tempo.yml  ·  loki-config.yaml        Trace + log backends
+└── grafana/
+    ├── provisioning/
+    │   ├── datasources/datasources.yml   Prometheus + Tempo + Loki data sources
+    │   └── dashboards/dashboards.yml      Auto-load provider for dashboards
+    └── dashboards/
+        └── grafana-dashboard-llm-gateway.json   Importable LLM Gateway dashboard
+docker-compose.yml
+PROMETHEUS_GRAFANA_SETUP.md               Prometheus + Grafana setup guide
 ```
 
 ---

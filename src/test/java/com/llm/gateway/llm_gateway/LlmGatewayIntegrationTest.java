@@ -98,7 +98,8 @@ class LlmGatewayIntegrationTest {
     @Test
     @DisplayName("POST /query routes to openai by default")
     void query_defaultsToOpenAi() {
-        when(facade.execute(eq("openai"), any())).thenReturn(SUCCESS_RESPONSE);
+        // /query goes through auto-failover (silently routes to the next provider on auth/config errors)
+        when(facade.executeWithAutoFailover(eq("openai"), any())).thenReturn(SUCCESS_RESPONSE);
 
         webTestClient.post().uri("/query")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -111,7 +112,7 @@ class LlmGatewayIntegrationTest {
                     assertThat(r.getError()).isNull();
                 });
 
-        verify(facade).execute(eq("openai"), any());
+        verify(facade).executeWithAutoFailover(eq("openai"), any());
     }
 
     @Test
@@ -120,7 +121,7 @@ class LlmGatewayIntegrationTest {
         LlmResponse anthropicResponse = LlmResponse.builder()
                 .provider("anthropic").content("Hello from Anthropic")
                 .timestamp(System.currentTimeMillis()).build();
-        when(facade.execute(eq("anthropic"), any())).thenReturn(anthropicResponse);
+        when(facade.executeWithAutoFailover(eq("anthropic"), any())).thenReturn(anthropicResponse);
 
         webTestClient.post().uri("/query")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -207,7 +208,7 @@ class LlmGatewayIntegrationTest {
     @Test
     @DisplayName("POST /chat with session_id delegates to facade")
     void chat_withSessionId_delegatesToFacade() {
-        when(facade.execute(eq("openai"), any())).thenReturn(SUCCESS_RESPONSE);
+        when(facade.executeWithAutoFailover(eq("openai"), any())).thenReturn(SUCCESS_RESPONSE);
 
         webTestClient.post().uri("/chat")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -215,7 +216,7 @@ class LlmGatewayIntegrationTest {
                 .exchange()
                 .expectStatus().isOk();
 
-        verify(facade).execute(eq("openai"), argThat(r -> "session-abc".equals(r.getSessionId())));
+        verify(facade).executeWithAutoFailover(eq("openai"), argThat(r -> "session-abc".equals(r.getSessionId())));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -240,7 +241,7 @@ class LlmGatewayIntegrationTest {
     @Test
     @DisplayName("Internal server error returns 500")
     void internalError_returns500() {
-        when(facade.execute(any(), any()))
+        when(facade.executeWithAutoFailover(any(), any()))
                 .thenThrow(new RuntimeException("Unexpected failure"));
 
         webTestClient.post().uri("/query")

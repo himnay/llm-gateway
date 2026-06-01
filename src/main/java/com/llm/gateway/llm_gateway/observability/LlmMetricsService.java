@@ -11,13 +11,15 @@ import java.util.concurrent.TimeUnit;
 /**
  * Centralised metrics service for the LLM Gateway.
  *
- * <h3>Exposed metrics (Prometheus endpoint: /actuator/prometheus)</h3>
+ * <h3>Exposed metrics (Prometheus endpoint: /llm/actuator/prometheus)</h3>
  * <ul>
  *   <li>{@code llm_requests_total}               – counters per provider, cache-hit flag</li>
+ *   <li>{@code llm_provider_calls_total}         – calls per provider + model + outcome (success/error)</li>
  *   <li>{@code llm_requests_errors_total}         – counters per provider, error type</li>
  *   <li>{@code llm_requests_rejected_total}       – counters per provider, reason</li>
  *   <li>{@code llm_request_latency_seconds}       – timer histogram per provider</li>
  *   <li>{@code llm_prompt_length_chars}           – distribution summary</li>
+ *   <li>{@code llm_tokens_total}                  – token usage per provider + model + type (prompt/completion/total)</li>
  * </ul>
  */
 @Slf4j
@@ -27,11 +29,13 @@ public class LlmMetricsService {
     private final MeterRegistry meterRegistry;
 
     // Pre-registered timers / counters for hot-path performance
-    private static final String METRIC_REQUESTS  = "llm.requests.total";
-    private static final String METRIC_ERRORS    = "llm.requests.errors.total";
-    private static final String METRIC_REJECTED  = "llm.requests.rejected.total";
-    private static final String METRIC_LATENCY   = "llm.request.latency.seconds";
+    private static final String METRIC_REQUESTS   = "llm.requests.total";
+    private static final String METRIC_PROVIDER_CALLS = "llm.provider.calls.total";
+    private static final String METRIC_ERRORS     = "llm.requests.errors.total";
+    private static final String METRIC_REJECTED   = "llm.requests.rejected.total";
+    private static final String METRIC_LATENCY    = "llm.request.latency.seconds";
     private static final String METRIC_PROMPT_LEN = "llm.prompt.length.chars";
+    private static final String METRIC_TOKENS     = "llm.tokens.total";
 
     public LlmMetricsService(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
@@ -49,6 +53,49 @@ public class LlmMetricsService {
                .tag("cache_hit", String.valueOf(cacheHit))
                .register(meterRegistry)
                .increment();
+    }
+
+    /**
+     * Dedicated per-provider call counter so dashboards can show exactly how many
+     * LLM calls were routed to each provider/model and whether they succeeded.
+     *
+     * <p>Metric: {@code llm_provider_calls_total{provider, model, outcome}}.</p>
+     *
+     * @param outcome {@code "success"} or {@code "error"}
+     */
+    public void recordProviderCall(String provider, String model, String outcome) {
+        Counter.builder(METRIC_PROVIDER_CALLS)
+               .description("LLM calls routed to each provider, partitioned by model and outcome")
+               .tag("provider", provider)
+               .tag("model",    model    == null || model.isBlank() ? "default" : model)
+               .tag("outcome",  outcome)
+               .register(meterRegistry)
+               .increment();
+    }
+
+    /**
+     * Records token consumption reported by the provider, broken down by type
+     * so usage and cost can be tracked per provider/model.
+     *
+     * <p>Metric: {@code llm_tokens_total{provider, model, type}} where {@code type}
+     * is {@code prompt}, {@code completion} or {@code total}.</p>
+     */
+    public void recordTokenUsage(String provider, String model,
+                                 Integer promptTokens, Integer completionTokens, Integer totalTokens) {
+        recordTokens(provider, model, "prompt",     promptTokens);
+        recordTokens(provider, model, "completion", completionTokens);
+        recordTokens(provider, model, "total",      totalTokens);
+    }
+
+    private void recordTokens(String provider, String model, String type, Integer count) {
+        if (count == null || count <= 0) return;
+        Counter.builder(METRIC_TOKENS)
+               .description("Total tokens consumed, partitioned by provider, model and type")
+               .tag("provider", provider)
+               .tag("model",    model == null || model.isBlank() ? "default" : model)
+               .tag("type",     type)
+               .register(meterRegistry)
+               .increment(count);
     }
 
     /** Records the end-to-end latency of a single LLM call. */
@@ -90,6 +137,23 @@ public class LlmMetricsService {
                .tag("error_type", errorType)
                .register(meterRegistry)
                .increment();
+    }
+
+    /**
+     * Records that sensitive data (PII or a secret) was redacted from a prompt or
+     * response. Metric: {@code llm_sensitive_data_redactions_total{provider, direction, type}}
+     * where {@code direction} is {@code inbound} (to the LLM) or {@code outbound} (to the caller).
+     */
+    public void recordSensitiveDataRedaction(String provider, String direction, Iterable<String> types) {
+        for (String type : types) {
+            Counter.builder("llm.sensitive.data.redactions.total")
+                   .description("Sensitive data (PII/secrets) redacted from prompts or responses")
+                   .tag("provider",  provider)
+                   .tag("direction", direction)
+                   .tag("type",      type)
+                   .register(meterRegistry)
+                   .increment();
+        }
     }
 
     /** Increments the rejection counter (e.g. prompt injection detected). */

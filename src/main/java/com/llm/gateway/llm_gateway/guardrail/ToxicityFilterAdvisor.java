@@ -1,8 +1,8 @@
 package com.llm.gateway.llm_gateway.guardrail;
 
+import com.llm.gateway.llm_gateway.config.GuardrailPatternProperties;
 import com.llm.gateway.llm_gateway.observability.LlmMetricsService;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
@@ -28,21 +28,21 @@ import java.util.List;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class ToxicityFilterAdvisor implements BaseAdvisor {
 
-    private static final List<String> TOXIC_PATTERNS = List.of(
-            "how to make a bomb", "how to build a weapon", "step by step instructions to kill",
-            "synthesize methamphetamine", "create malware", "write a virus",
-            "exploit vulnerability to attack", "hack into systems",
-            "bypass authentication systems", "child exploitation",
-            "self-harm instructions", "suicide method"
-    );
-
+    // Toxic keyword list is externalised in GuardrailPatternProperties
+    // (llm.guardrails.patterns.toxic-keywords) so it can be tuned without code changes.
+    private final List<String> toxicPatterns;
     private final LlmMetricsService metricsService;
 
     @Value("${llm.guardrails.toxicity.enabled:true}")
     private boolean enabled;
+
+    public ToxicityFilterAdvisor(LlmMetricsService metricsService, GuardrailPatternProperties patterns) {
+        this.metricsService = metricsService;
+        this.toxicPatterns  = patterns.getToxicKeywords().stream()
+                .map(String::toLowerCase).toList();
+    }
 
     @Override
     public int getOrder() { return Ordered.HIGHEST_PRECEDENCE + 1; }
@@ -55,7 +55,7 @@ public class ToxicityFilterAdvisor implements BaseAdvisor {
         if (text == null || text.isBlank()) return request;
 
         String lower = text.toLowerCase();
-        for (String pattern : TOXIC_PATTERNS) {
+        for (String pattern : toxicPatterns) {
             if (lower.contains(pattern)) {
                 log.warn("GUARDRAIL | TOXIC_INPUT_BLOCKED | pattern={}", pattern);
                 metricsService.recordRejectedRequest(
@@ -84,7 +84,7 @@ public class ToxicityFilterAdvisor implements BaseAdvisor {
 
     private void scanOutput(String text, String provider) {
         String lower = text.toLowerCase();
-        for (String pattern : TOXIC_PATTERNS) {
+        for (String pattern : toxicPatterns) {
             if (lower.contains(pattern)) {
                 log.warn("GUARDRAIL | TOXIC_OUTPUT_DETECTED | provider={} | pattern={}", provider, pattern);
                 metricsService.recordError(provider, "TOXIC_OUTPUT_DETECTED");

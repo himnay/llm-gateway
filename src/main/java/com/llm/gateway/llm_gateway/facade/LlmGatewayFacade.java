@@ -8,9 +8,11 @@ import com.llm.gateway.llm_gateway.observability.LlmMetricsService;
 import com.llm.gateway.llm_gateway.security.PromptSanitizer;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
 import com.llm.gateway.llm_gateway.security.SanitizationResult;
+import com.llm.gateway.llm_gateway.security.SensitiveDataRedactor;
 import com.llm.gateway.llm_gateway.service.OpenAiService;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import io.micrometer.core.annotation.Timed;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Span;
@@ -58,6 +60,7 @@ public class LlmGatewayFacade {
     private final PromptSanitizer sanitizer;
     private final PromptCacheService cacheService;
     private final LlmMetricsService metricsService;
+    private final SensitiveDataRedactor sensitiveDataRedactor;
     private final ObservationRegistry observationRegistry;
 
     @Autowired(required = false)
@@ -78,15 +81,26 @@ public class LlmGatewayFacade {
     @Value("${llm.auto-failover.provider-timeout-seconds:10}")
     private int providerTimeoutSeconds;
 
+    @Value("${llm.security.sensitive-data.enabled:true}")
+    private boolean sensitiveDataEnabled;
+
+    @Value("${llm.security.sensitive-data.redact-prompt:true}")
+    private boolean redactPrompt;
+
+    @Value("${llm.security.sensitive-data.redact-response:true}")
+    private boolean redactResponse;
+
     public LlmGatewayFacade(List<LlmServiceProvider> providerList,
                              PromptSanitizer sanitizer,
                              PromptCacheService cacheService,
                              LlmMetricsService metricsService,
+                             SensitiveDataRedactor sensitiveDataRedactor,
                              ObservationRegistry observationRegistry) {
-        this.sanitizer           = sanitizer;
-        this.cacheService        = cacheService;
-        this.metricsService      = metricsService;
-        this.observationRegistry = observationRegistry;
+        this.sanitizer             = sanitizer;
+        this.cacheService          = cacheService;
+        this.metricsService        = metricsService;
+        this.sensitiveDataRedactor = sensitiveDataRedactor;
+        this.observationRegistry   = observationRegistry;
         this.providers           = providerList.stream()
                 .collect(Collectors.toMap(
                         p -> p.getProviderName().toLowerCase(),
@@ -98,6 +112,10 @@ public class LlmGatewayFacade {
         log.info("LLM Gateway initialised with {} providers: {}", providers.size(), providers.keySet());
     }
 
+    @Timed(value = "llm.gateway.execution",
+           description = "End-to-end turnaround time of a single gateway LLM call",
+           histogram = true,
+           extraTags = {"operation", "execute"})
     @Retry(name = "llm-gateway", fallbackMethod = "retryFallback")
     @CircuitBreaker(name = "llm-gateway", fallbackMethod = "circuitBreakerFallback")
     public LlmResponse execute(String providerName, LlmRequest request) {
@@ -125,6 +143,20 @@ public class LlmGatewayFacade {
             if (sanitization.isModified()) {
                 log.info("SECURITY | Prompt sanitized | requestId={} | warnings={}", reqId, sanitization.getWarnings());
                 request.setPrompt(sanitization.getSanitizedPrompt());
+            }
+
+            // ── 2b. Sensitive-data redaction (ALL providers, before anything leaves) ──
+            // Runs for every provider — including the custom REST ones (Google, Cohere,
+            // HuggingFace) that bypass the Spring AI advisor chain — so no PII or secret
+            // is ever forwarded to an LLM, cached, or logged.
+            if (sensitiveDataEnabled && redactPrompt) {
+                SensitiveDataRedactor.Result redaction = sensitiveDataRedactor.redact(request.getPrompt());
+                if (redaction.redacted()) {
+                    request.setPrompt(redaction.text());
+                    metricsService.recordSensitiveDataRedaction(provider, "inbound", redaction.types());
+                    log.info("SECURITY | Sensitive data redacted from prompt | requestId={} | types={}",
+                            reqId, redaction.types());
+                }
             }
             metricsService.recordPromptLength(provider, request.getPrompt().length());
 
@@ -189,10 +221,16 @@ public class LlmGatewayFacade {
             } catch (Exception ex) {
                 observation.error(ex);
                 metricsService.recordError(provider, ex.getClass().getSimpleName());
+                metricsService.recordProviderCall(provider, request.getModel(), "error");
                 log.error("LLM | Provider call failed | requestId={} | provider={}", reqId, provider, ex);
                 throw ex;
             } finally {
                 observation.stop();
+            }
+
+            // ── 7b. Redact sensitive data from the response (before cache + caller) ──
+            if (sensitiveDataEnabled && redactResponse && response.getError() == null) {
+                redactResponseContent(provider, reqId, response);
             }
 
             // ── 8. Store in cache on success ──────────────────────────────────
@@ -203,6 +241,10 @@ public class LlmGatewayFacade {
             // ── 9. Record gateway-level metrics ───────────────────────────────
             metricsService.recordRequest(provider, false);
             metricsService.recordLatency(provider, response.getLatencyMs());
+            metricsService.recordProviderCall(provider, response.getModel(),
+                    response.getError() != null ? "error" : "success");
+            metricsService.recordTokenUsage(provider, response.getModel(),
+                    response.getPromptTokens(), response.getCompletionTokens(), response.getTotalTokens());
             if (response.getError() != null) {
                 metricsService.recordError(provider, "LLM_ERROR");
             }
@@ -221,6 +263,10 @@ public class LlmGatewayFacade {
     /**
      * Tries each provider in order, returning the first successful response.
      */
+    @Timed(value = "llm.gateway.execution",
+           description = "End-to-end turnaround time of a single gateway LLM call",
+           histogram = true,
+           extraTags = {"operation", "failover"})
     public LlmResponse executeWithFailover(List<String> providerChain, LlmRequest request) {
         Exception lastException = null;
         for (String provider : providerChain) {
@@ -255,6 +301,10 @@ public class LlmGatewayFacade {
      * Client prompt rejections (injection detected, topic blocked) are never
      * failed-over — they always propagate back to the caller.
      */
+    @Timed(value = "llm.gateway.execution",
+           description = "End-to-end turnaround time of a single gateway LLM call",
+           histogram = true,
+           extraTags = {"operation", "auto-failover"})
     public LlmResponse executeWithAutoFailover(String preferredProvider, LlmRequest request) {
         LlmResponse primaryResponse = null;
         boolean failoverNeeded = false;
@@ -438,6 +488,33 @@ public class LlmGatewayFacade {
                     "Unknown LLM provider: '" + name + "'. Registered: " + providers.keySet());
         }
         return p;
+    }
+
+    /**
+     * Redacts any PII/secret that leaked into the model's response before it is cached
+     * or returned to the caller. Mutates the {@code content} and {@code response} fields.
+     */
+    private void redactResponseContent(String provider, String reqId, LlmResponse response) {
+        boolean redacted = false;
+        java.util.Set<String> types = new java.util.LinkedHashSet<>();
+
+        SensitiveDataRedactor.Result content = sensitiveDataRedactor.redact(response.getContent());
+        if (content.redacted()) {
+            response.setContent(content.text());
+            types.addAll(content.types());
+            redacted = true;
+        }
+        SensitiveDataRedactor.Result body = sensitiveDataRedactor.redact(response.getResponse());
+        if (body.redacted()) {
+            response.setResponse(body.text());
+            types.addAll(body.types());
+            redacted = true;
+        }
+        if (redacted) {
+            metricsService.recordSensitiveDataRedaction(provider, "outbound", types);
+            log.warn("SECURITY | Sensitive data redacted from response | requestId={} | provider={} | types={}",
+                    reqId, provider, types);
+        }
     }
 
     private LlmResponse errorResponse(String provider, String message) {

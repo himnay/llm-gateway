@@ -1,5 +1,6 @@
 package com.llm.gateway.llm_gateway.security;
 
+import com.llm.gateway.llm_gateway.config.GuardrailPatternProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -8,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * Prompt Sanitizer – protects the gateway against prompt injection attacks.
@@ -22,6 +24,10 @@ import java.util.regex.Pattern;
  *   <li><b>Length limit</b> – prompts exceeding {@code llm.security.sanitization.max-prompt-length}
  *       characters are rejected.</li>
  * </ul>
+ *
+ * <p>The injection and strip pattern lists are externalised in
+ * {@link GuardrailPatternProperties} ({@code llm.guardrails.patterns.injection} /
+ * {@code llm.guardrails.patterns.strip}) so they can be tuned without code changes.</p>
  */
 @Slf4j
 @Component
@@ -40,62 +46,30 @@ public class PromptSanitizer {
     private boolean blockOnViolation;
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Hard-block patterns – indicate a deliberate prompt injection attempt
+    // Patterns are externalised in GuardrailPatternProperties (llm.guardrails.patterns.*)
+    // so they can be tuned without code changes. Compiled once at construction.
     // ──────────────────────────────────────────────────────────────────────────
-    private static final List<Pattern> INJECTION_BLOCK_PATTERNS = List.of(
-        // Instruction-override attacks
-        Pattern.compile("(?i)\\bignore\\s+(?:all\\s+)?previous\\s+instructions?\\b"),
-        Pattern.compile("(?i)\\bdisregard\\s+(?:all\\s+)?(?:previous\\s+)?instructions?\\b"),
-        Pattern.compile("(?i)\\bforget\\s+(?:all\\s+)?(?:previous\\s+)?instructions?\\b"),
-        Pattern.compile("(?i)\\boverride\\s+(?:all\\s+)?instructions?\\b"),
-        Pattern.compile("(?i)\\bnew\\s+instructions?\\s*:\\s*"),
-        Pattern.compile("(?i)\\byour\\s+new\\s+(?:role|task|job|instructions?)\\b"),
+    private final List<Pattern> injectionBlockPatterns;
+    private final List<Pattern> stripPatterns;
 
-        // Role-hijacking attacks
-        Pattern.compile("(?i)\\byou\\s+are\\s+now\\s+(?:an?\\s+)?(?:evil|harmful|dangerous|unrestricted|jailbroken)"),
-        Pattern.compile("(?i)\\bact\\s+as\\s+(?:an?\\s+)?(?:evil|harmful|unrestricted|uncensored)"),
-        Pattern.compile("(?i)\\bpretend\\s+(?:you\\s+are|to\\s+be)\\s+(?:an?\\s+)?(?:evil|harmful|unrestricted)"),
+    public PromptSanitizer(GuardrailPatternProperties patterns) {
+        this.injectionBlockPatterns = compile(patterns.getInjection(), "injection");
+        this.stripPatterns          = compile(patterns.getStrip(), "strip");
+        log.info("SECURITY | PromptSanitizer initialised | injectionPatterns={} | stripPatterns={}",
+                injectionBlockPatterns.size(), stripPatterns.size());
+    }
 
-        // Jailbreak keywords
-        Pattern.compile("(?i)\\bdan\\s+mode\\b"),
-        Pattern.compile("(?i)\\bdeveloper\\s+mode\\b"),
-        Pattern.compile("(?i)\\bjailbreak\\b"),
-        Pattern.compile("(?i)\\bdo\\s+anything\\s+now\\b"),
-
-        // Restriction bypass
-        Pattern.compile("(?i)\\bbypass\\s+(?:all\\s+)?(?:restrictions?|filters?|safeguards?|guidelines?|content\\s+policy)\\b"),
-        Pattern.compile("(?i)\\bunlock\\s+(?:your\\s+)?(?:full\\s+)?(?:capabilities?|potential|mode)\\b"),
-
-        // Delimiter injection (attempting to inject a fake system-prompt boundary)
-        Pattern.compile("(?i)###\\s*(?:SYSTEM|INSTRUCTIONS?|PROMPT|OVERRIDE)\\s*###"),
-        Pattern.compile("(?i)\\[\\[\\s*(?:SYSTEM|INSTRUCTIONS?|OVERRIDE)\\s*\\]\\]"),
-        Pattern.compile("(?i)<\\s*(?:system|instructions?|override)\\s*>"),
-        Pattern.compile("(?i)---\\s*SYSTEM\\s*---"),
-        Pattern.compile("(?i)\\bSYSTEM:\\s"),
-
-        // Indirect exfiltration / system-prompt revelation
-        Pattern.compile("(?i)\\brepeat\\s+(?:the\\s+)?(?:system|initial)\\s+prompt\\b"),
-        Pattern.compile("(?i)\\breveal\\s+(?:your\\s+)?(?:system|initial|hidden)\\s+(?:prompt|instructions?)\\b"),
-        Pattern.compile("(?i)\\bprint\\s+(?:your\\s+)?(?:system|initial|hidden)\\s+(?:prompt|instructions?)\\b")
-    );
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // Strip patterns – remove dangerous content but keep the request alive
-    // ──────────────────────────────────────────────────────────────────────────
-    private static final List<Pattern> STRIP_PATTERNS = List.of(
-        // Script / HTML injection
-        Pattern.compile("(?i)<script[^>]*>.*?</script>", Pattern.DOTALL),
-        Pattern.compile("<[^>]{1,200}>"),   // generic HTML tags (bounded)
-
-        // Null bytes and most ASCII control characters (keep \t, \n, \r)
-        Pattern.compile("[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]"),
-
-        // Unicode direction overrides (bidirectional text attacks)
-        Pattern.compile("[\u202A-\u202E\u2066-\u2069\u200F\u200E]"),
-
-        // Excessive repeated characters (often used to confuse tokenizers)
-        Pattern.compile("(.)\\1{200,}")
-    );
+    private static List<Pattern> compile(List<String> regexes, String label) {
+        List<Pattern> compiled = new ArrayList<>();
+        for (String regex : regexes) {
+            try {
+                compiled.add(Pattern.compile(regex));
+            } catch (PatternSyntaxException ex) {
+                log.error("SECURITY | invalid {} regex skipped | regex='{}' | error={}", label, regex, ex.getMessage());
+            }
+        }
+        return compiled;
+    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // Public API
@@ -136,7 +110,7 @@ public class PromptSanitizer {
 
         // ── 3. Hard-block injection patterns ────────────────────────────────
         if (blockInjectionPatterns) {
-            for (Pattern p : INJECTION_BLOCK_PATTERNS) {
+            for (Pattern p : injectionBlockPatterns) {
                 Matcher m = p.matcher(prompt);
                 if (m.find()) {
                     String excerpt = m.group().length() > 80 ? m.group().substring(0, 80) + "…" : m.group();
@@ -152,7 +126,7 @@ public class PromptSanitizer {
 
         // ── 4. Strip dangerous content ───────────────────────────────────────
         String sanitized = prompt;
-        for (Pattern p : STRIP_PATTERNS) {
+        for (Pattern p : stripPatterns) {
             String after = p.matcher(sanitized).replaceAll(" ");
             if (!after.equals(sanitized)) {
                 warnings.add("Unsafe content was stripped from the prompt.");
@@ -195,4 +169,3 @@ public class PromptSanitizer {
                 .build();
     }
 }
-
