@@ -94,6 +94,13 @@
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
+		<!-- Extra JVM process metrics (RSS / native memory) consumed by the
+		     Grafana JVM dashboard's "Process Memory" panel. -->
+		<dependency>
+			<groupId>io.github.mweirauch</groupId>
+			<artifactId>micrometer-jvm-extras</artifactId>
+			<version>0.2.2</version>
+		</dependency>
 		<dependency>
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-tracing-bridge-otel</artifactId>

@@ -85,7 +85,7 @@ Client
 | LLM Integration  | Spring AI 2.0.0-M8                                                   |
 | LLM Providers    | OpenAI, Anthropic Claude, Ollama, Google Gemini, Cohere, HuggingFace |
 | Cache + Memory   | Redis (Spring Data Redis / Lettuce)                                  |
-| Database         | PostgreSQL 17 (R2DBC reactive + JDBC for Flyway)                     |
+| Database         | PostgreSQL 18 (R2DBC reactive + JDBC for Flyway)                     |
 | Migrations       | Flyway                                                               |
 | Resilience       | Resilience4j (Circuit Breaker, Retry, Rate Limiter)                  |
 | Observability    | Micrometer + OTEL, Prometheus, Grafana Tempo                         |
@@ -340,6 +340,17 @@ CREATE TABLE api_keys (
 ```
 
 Flyway manages the schema. Migrations live in `src/main/resources/db/migration/`.
+
+### Seeded keys (local development)
+
+Migration `V2__seed_api_keys.sql` pre-loads two ready-to-use keys so you can exercise the gateway with auth enabled without minting your own. Send the **raw value** in the `X-API-Key` header — the gateway hashes it and matches the SHA-256 stored in `key_hash`.
+
+| Name            | `client_id`    | Raw key (`X-API-Key`)        | Purpose                                                                                                     |
+|-----------------|----------------|------------------------------|-------------------------------------------------------------------------------------------------------------|
+| Development Key | `dev-client`   | `llm-gateway-dev-key-2026`   | Day-to-day local testing — the key you'd normally use from Insomnia/curl.                                   |
+| Admin Key       | `admin-client` | `llm-gateway-admin-key-2026` | Represents a separate, higher-trust caller, distinguished by its own `client_id` for audit/log attribution. |
+
+Both keys are functionally equivalent today (the gateway does not yet enforce per-role authorization) — the difference is the **`client_id`** each authenticates as, which is what shows up in `last_used` tracking and request logs. They are **local-development credentials only**; rotate or remove them before any real deployment.
 
 ### Adding a new API key
 
