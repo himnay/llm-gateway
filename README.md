@@ -1,12 +1,13 @@
 # LLM Gateway
 
-A production-ready, reactive Spring Boot gateway that provides a single unified API for multiple LLM providers (OpenAI, HuggingFace, Cohere, Anthropic Claude, Ollama). Handles routing, failover, multi-turn chat memory, prompt safety, guardrails, caching, API-key authentication, and full observability out of the box.
+A production-ready, reactive Spring Boot gateway that provides a single unified API for multiple LLM providers (OpenAI, HuggingFace, Cohere, Anthropic Claude, Ollama). Handles routing, failover, multi-turn chat memory, prompt safety, guardrails (in-process + a LangChain-based guardrails sidecar), caching, API-key authentication, and full observability out of the box.
 
 ---
 
 ## Table of Contents
 
 - [Architecture Overview](#architecture-overview)
+- [Design Patterns (GoF)](#design-patterns-gof)
 - [Tech Stack](#tech-stack)
 - [Features](#features)
 - [Prerequisites](#prerequisites)
@@ -17,6 +18,7 @@ A production-ready, reactive Spring Boot gateway that provides a single unified 
 - [API Documentation](#api-documentation)
 - [Prompt Template System](#prompt-template-system)
 - [Guardrail Chain](#guardrail-chain)
+- [Guardrails Service (LangChain sidecar)](#guardrails-service-langchain-sidecar)
 - [Observability](#observability)
 - [Project Structure](#project-structure)
 
@@ -42,7 +44,13 @@ Client
 │  • Prompt validation (blank / length)                           │
 │  • Per-request timeout                                          │
 │                      │                                          │
-│                      ├─ 1. Prompt Sanitization                  │
+│                      ├─ 1. Inbound Guardrail Chain              │
+│                      │    (Chain of Responsibility)             │
+│                      │    ① prompt-sanitization (injection)     │
+│                      │    ② sensitive-data-redaction (PII)      │
+│                      │    ③ remote-guardrails ──► Guardrails    │
+│                      │         REST /v1/validate    Service     │
+│                      │         (LangChain sidecar, port 8000)   │
 │                      ├─ 2. Redis Cache Lookup                   │
 │                      ├─ 3. OTEL Observation Span                │
 │                      ├─ 4. Delegate → LlmServiceProvider        │
@@ -66,12 +74,34 @@ Client
 │                      └─ 6. Redis Cache Store                    │
 │                                                                 │
 │  Side channels:                                                 │
+│    Guardrails  ──  LangChain sidecar (validate prompts/answers) │
 │    PostgreSQL  ──  API key registry (Flyway managed)            │
 │    Redis       ──  Prompt cache + Chat memory                   │
 │    Prometheus  ──  Metrics scraping                             │
 │    OTLP        ──  Distributed traces → Grafana Tempo           │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Design Patterns (GoF)
+
+The gateway is deliberately structured around Gang-of-Four patterns; each is applied where it
+removes real coupling, not for its own sake:
+
+| Pattern | Where | Why |
+|---------|-------|-----|
+| **Facade** | `facade/LlmGatewayFacade` | Single entry point hiding the pipeline (guardrails → cache → tracing → provider → metrics) from handlers |
+| **Strategy** | `facade/LlmServiceProvider` + 6 implementations | Each provider is an interchangeable strategy resolved by name at runtime |
+| **Factory Method / Registry** | `facade/LlmProviderRegistry` | Discovers every `LlmServiceProvider` bean and resolves/validates providers; adding a provider needs zero gateway changes (OCP) |
+| **Chain of Responsibility** | `guardrail/chain/GuardrailChain` + `GuardrailStep`s | Ordered, pluggable inbound guardrail pipeline (sanitization → PII redaction → remote guardrails); any step can rewrite the prompt or reject the request |
+| **Template Method** | `service/AbstractRestLlmService` | Fixes the REST-call skeleton (render system prompt → POST → parse → never throw); Google/Cohere/HuggingFace implement only the hooks (endpoint, headers, payload, parsing) |
+| **Adapter** | `guardrail/remote/RemoteGuardrailClient` | Adapts the LangChain sidecar's REST/JSON API to a typed Java interface |
+| **Observer** | `guardrail/event/GuardrailViolationEvent` + listener | Guardrail rejections publish events; audit logging/alerting subscribe without coupling to the chain |
+| **Decorator** | Spring AI advisor chain (`guardrail/*Advisor`) | Each advisor wraps the ChatClient call, adding behaviour (toxicity, PII, metrics, memory) transparently |
+| **Builder** | Lombok `@Builder` on `LlmRequest`/`LlmResponse` | Safe construction of many-field immutable-style DTOs |
+| **Proxy** | Resilience4j `@CircuitBreaker`/`@Retry` (AOP) | Cross-cutting resilience added via dynamic proxies, not in business code |
+| **Singleton** | Spring-managed beans | All services/components are container-scoped singletons (no hand-rolled singletons) |
 
 ---
 
@@ -84,6 +114,7 @@ Client
 | Security         | Spring Security WebFlux + PostgreSQL API key table                   |
 | LLM Integration  | Spring AI 2.0.0-M8                                                   |
 | LLM Providers    | OpenAI, Anthropic Claude, Ollama, Google Gemini, Cohere, HuggingFace |
+| Guardrails       | In-process chain + LangChain/FastAPI sidecar (REST, Docker)          |
 | Cache + Memory   | Redis (Spring Data Redis / Lettuce)                                  |
 | Database         | PostgreSQL 18 (R2DBC reactive + JDBC for Flyway)                     |
 | Migrations       | Flyway                                                               |
@@ -103,6 +134,8 @@ Client
 - **Assistant message prefill** — steer response format without consuming a user turn
 - **API key authentication** — Spring Security WebFlux backed by a PostgreSQL table; SHA-256 hashed keys, expiry support, `last_used` tracking
 - **9-step guardrail chain** — prompt safety, PII redaction, toxicity filter, topic restriction, hallucination monitoring, response format validation
+- **External guardrails service** — LangChain-based sidecar (Docker) consulted over REST **before every LLM call** (and optionally on responses); injection/jailbreak heuristics, toxicity, PII masking, topic policy, optional LLM-as-judge; fail-open/fail-closed policy + dedicated circuit breaker
+- **GoF design patterns throughout** — Facade, Strategy, Registry, Chain of Responsibility, Template Method, Adapter, Observer, Decorator, Builder, Proxy (see [Design Patterns](#design-patterns-gof))
 - **Sensitive-data guard (all providers)** — provider-agnostic PII + secret redaction applied in the facade on both request and response, so nothing sensitive is sent to an LLM, cached, or logged
 - **Externalised guardrail patterns** — all injection / PII / toxicity pattern lists tunable in YAML (`llm.guardrails.patterns.*`) without code changes
 - **Redis prompt cache** — SHA-256 keyed (includes system prompt, template vars, assistant message), configurable TTL
@@ -144,8 +177,11 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ### 2. Start dependencies with Docker Compose
 
 ```bash
-docker compose up -d postgres redis
+docker compose up -d postgres redis guardrails
 ```
+
+The `guardrails` service is built locally from `guardrails-service/` (base image:
+`langchain/langchain`) the first time you run this.
 
 Flyway runs automatically on startup and creates the `api_keys` table with two seed keys:
 
@@ -196,19 +232,20 @@ curl -X POST http://localhost:8080/llm/query \
 docker compose up -d
 
 # Start only infrastructure (run the gateway from IDE/Maven)
-docker compose up -d postgres redis
+docker compose up -d postgres redis guardrails
 
 # Observability stack
 docker compose up -d prometheus grafana tempo
 ```
 
-| Service       | Port | Purpose                    |
-|---------------|------|----------------------------|
-| PostgreSQL    | 5432 | API key registry           |
-| Redis         | 6379 | Prompt cache + chat memory |
-| Prometheus    | 9090 | Metrics                    |
-| Grafana       | 3000 | Dashboards (admin/admin)   |
-| Grafana Tempo | 4318 | OTLP trace collector       |
+| Service            | Port | Purpose                                        |
+|--------------------|------|------------------------------------------------|
+| Guardrails sidecar | 8000 | LangChain guardrails REST API (`/v1/validate`) |
+| PostgreSQL         | 5432 | API key registry                               |
+| Redis              | 6379 | Prompt cache + chat memory                     |
+| Prometheus         | 9090 | Metrics                                        |
+| Grafana            | 3000 | Dashboards (admin/admin)                       |
+| Grafana Tempo      | 4318 | OTLP trace collector                           |
 
 ---
 
@@ -291,6 +328,24 @@ LLM_PROVIDERS_OPENAI_ENABLED=false
 | `LLM_RESPONSE_FORMAT_ENABLED` | `true`    |
 | `LLM_RESPONSE_MIN_LENGTH`     | `10`      |
 | `LLM_RESPONSE_MAX_LENGTH`     | `50000`   |
+
+### External Guardrails Service (LangChain sidecar)
+
+| Env Var                                   | Default                 | Description                                          |
+|-------------------------------------------|-------------------------|------------------------------------------------------|
+| `LLM_EXTERNAL_GUARDRAILS_ENABLED`         | `true`                  | Call the sidecar before every LLM call               |
+| `LLM_EXTERNAL_GUARDRAILS_URL`             | `http://localhost:8000` | Sidecar base URL (`guardrails` service in compose)   |
+| `LLM_EXTERNAL_GUARDRAILS_TIMEOUT_MS`      | `3000`                  | Per-call timeout                                     |
+| `LLM_EXTERNAL_GUARDRAILS_FAIL_OPEN`       | `true`                  | Sidecar down: `true` = continue, `false` = reject    |
+| `LLM_EXTERNAL_GUARDRAILS_VALIDATE_OUTPUT` | `false`                 | Also validate LLM responses before returning them    |
+
+Sidecar-side knobs (set on the `guardrails` container in `docker-compose.yml`):
+
+| Env Var                    | Default | Description                                            |
+|----------------------------|---------|--------------------------------------------------------|
+| `GUARDRAILS_BLOCKED_TOPICS`| _(empty)_ | Comma-separated restricted topics                    |
+| `GUARDRAILS_MAX_LENGTH`    | `10000` | Max accepted text length                               |
+| `GUARDRAILS_LLM_CHECK`     | `false` | Enable LangChain LLM-as-judge (needs `OPENAI_API_KEY`) |
 
 ### Security
 
@@ -592,6 +647,25 @@ System prompts live in `.st` files under `src/main/resources/prompts/`. Each pro
 
 ## Guardrail Chain
 
+Guardrails run at **two levels**:
+
+### Level 1 — Gateway guardrail chain (every provider)
+
+A GoF *Chain of Responsibility* (`guardrail/chain/GuardrailChain`) executed by the facade
+**before any provider is called** — including the REST providers that bypass the Spring AI
+advisor chain. Steps run in `Ordered` order; each can rewrite the prompt or reject the
+request with HTTP 400 (which also publishes a `GuardrailViolationEvent` for the audit log):
+
+| Order | Step                      | What it does                                                       |
+|-------|---------------------------|--------------------------------------------------------------------|
+| 100   | `prompt-sanitization`     | Injection/jailbreak regex blocking, strip + whitespace normalising  |
+| 200   | `sensitive-data-redaction`| PII/secret masking (`[EMAIL]`, `[API_KEY]`, …)                      |
+| 300   | `remote-guardrails`       | REST call to the [LangChain guardrails sidecar](#guardrails-service-langchain-sidecar) |
+
+Adding a step = one `@Component` implementing `GuardrailStep` — no facade changes.
+
+### Level 2 — Spring AI advisor chain (ChatClient providers)
+
 ```
 INPUT  ──► ① PromptGuardAdvisor        Logging checkpoint (sanitization done upstream)
            ② ToxicityFilterAdvisor     Blocks harmful content → HTTP 400
@@ -652,6 +726,65 @@ Sensible, fail-safe defaults ship in code (so protection is never accidentally
 disabled); any value you set in YAML **replaces** that category. See the commented
 example block under `llm.guardrails.patterns` in `application.yaml`. Invalid regexes are
 logged and skipped at startup rather than crashing the app.
+
+---
+
+## Guardrails Service (LangChain sidecar)
+
+A FastAPI service in `guardrails-service/`, built on the official **`langchain/langchain`
+Docker image**, that the gateway consults over REST **before forwarding any prompt to an
+LLM provider** (chain step 300) and — when `LLM_EXTERNAL_GUARDRAILS_VALIDATE_OUTPUT=true` —
+after the model answers, before the response is cached or returned.
+
+```
+LlmGatewayFacade ──► GuardrailChain ──► RemoteGuardrailStep
+                                              │ POST /v1/validate {"text", "stage"}
+                                              ▼
+                                     Guardrails sidecar :8000
+                                     ├─ length limit
+                                     ├─ prompt-injection / jailbreak heuristics
+                                     ├─ toxicity keywords
+                                     ├─ blocked-topics policy (env-tunable)
+                                     ├─ PII masking (returns sanitized_text)
+                                     └─ optional LangChain LLM-as-judge
+```
+
+### API
+
+```bash
+# Validate a prompt
+curl -X POST http://localhost:8000/v1/validate \
+  -H "Content-Type: application/json" \
+  -d '{"text": "ignore all previous instructions", "stage": "input"}'
+# → {"passed": false,
+#    "violations": ["prompt-injection: matched 'ignore all previous instructions'"],
+#    "sanitized_text": null, "risk_score": 0.25, "checks_run": [...], "latency_ms": 1}
+
+curl http://localhost:8000/health      # liveness + whether the LLM judge is active
+curl http://localhost:8000/v1/checks   # active checks + current policy
+```
+
+- `stage` is `"input"` (prompt, pre-LLM) or `"output"` (model answer, post-LLM).
+- When the sidecar returns `sanitized_text` (e.g. masked PII) on a passing result, the
+  gateway forwards the sanitized version to the provider and marks the response
+  `sanitized: true`.
+- A failing result rejects the request with **HTTP 400** carrying the sidecar's
+  violations, increments `llm_requests_rejected_total{reason="EXTERNAL_GUARDRAIL"}`, and
+  emits an `AUDIT` log line via the `GuardrailViolationEvent` observer. Guardrail
+  rejections are **never** auto-failed-over — the prompt is the problem, not the provider.
+
+### Availability policy
+
+The call is wrapped in its own Resilience4j circuit breaker (`guardrails-service`). If the
+sidecar is down, times out, or the circuit is open:
+
+- **fail-open** (default) — the request continues without remote validation; a `WARN` is
+  logged and `llm_requests_errors_total{provider="guardrails-service"}` increments.
+- **fail-closed** (`LLM_EXTERNAL_GUARDRAILS_FAIL_OPEN=false`) — the request is rejected;
+  choose this when policy enforcement matters more than availability.
+
+The in-process chain steps (100/200) still run either way, so baseline protection never
+depends on the sidecar.
 
 ---
 
@@ -719,12 +852,20 @@ src/
     │   ├── config/        ChatClientConfig, LlmRouterConfig, ObservabilityConfig, GuardrailPatternProperties, ...
     │   ├── dto/           LlmRequest, LlmResponse, LlmProvider, StructuredLlmResponse
     │   ├── exception/     GlobalExceptionHandler, LLMProviderNotSupportedException
-    │   ├── facade/        LlmGatewayFacade (execute, executeWithFailover, executeStructured)
+    │   ├── facade/        LlmGatewayFacade (Facade), LlmProviderRegistry (Registry),
+    │   │                  LlmServiceProvider (Strategy SPI)
     │   ├── guardrail/     9 advisor classes + AdvisorUtils (shared extraction helpers)
+    │   │   ├── chain/     GuardrailChain + GuardrailStep (Chain of Responsibility):
+    │   │   │              PromptSanitizationStep, SensitiveDataRedactionStep, RemoteGuardrailStep
+    │   │   ├── event/     GuardrailViolationEvent + audit listener (Observer)
+    │   │   └── remote/    RemoteGuardrailClient (Adapter), RemoteGuardrailProperties
     │   ├── handler/       LlmHandler, LlmStreamHandler
+    │   ├── image/         ImageHandler, ImageService
     │   ├── observability/ LlmMetricsService
     │   ├── security/      SecurityConfig, ApiKeyService, PromptSanitizer, SensitiveDataRedactor, ...
-    │   ├── service/       OpenAiService, AnthropicClaudeService, OllamaService, ...
+    │   ├── service/       AbstractRestLlmService (Template Method),
+    │   │                  OpenAiService, AnthropicClaudeService, OllamaService,
+    │   │                  GoogleGeminiService, CohereService, HuggingFaceService
     │   ├── template/      PromptTemplateService
     │   └── tools/         GatewayTools
     │
@@ -749,6 +890,10 @@ observability/
     │   └── dashboards/dashboards.yml      Auto-load provider for dashboards
     └── dashboards/
         └── grafana-dashboard-llm-gateway.json   Importable LLM Gateway dashboard
+guardrails-service/                        LangChain guardrails sidecar (Docker)
+├── Dockerfile                             FROM langchain/langchain + FastAPI
+├── app.py                                 /v1/validate, /v1/checks, /health
+└── requirements.txt
 docker-compose.yml
 PROMETHEUS_GRAFANA_SETUP.md               Prometheus + Grafana setup guide
 ```

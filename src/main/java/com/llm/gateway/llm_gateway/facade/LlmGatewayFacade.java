@@ -4,10 +4,13 @@ import com.llm.gateway.llm_gateway.cache.PromptCacheService;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
 import com.llm.gateway.llm_gateway.dto.StructuredLlmResponse;
+import com.llm.gateway.llm_gateway.guardrail.chain.GuardrailChain;
+import com.llm.gateway.llm_gateway.guardrail.chain.GuardrailContext;
+import com.llm.gateway.llm_gateway.guardrail.remote.GuardrailValidationResult;
+import com.llm.gateway.llm_gateway.guardrail.remote.RemoteGuardrailClient;
+import com.llm.gateway.llm_gateway.guardrail.remote.RemoteGuardrailProperties;
 import com.llm.gateway.llm_gateway.observability.LlmMetricsService;
-import com.llm.gateway.llm_gateway.security.PromptSanitizer;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
-import com.llm.gateway.llm_gateway.security.SanitizationResult;
 import com.llm.gateway.llm_gateway.security.SensitiveDataRedactor;
 import com.llm.gateway.llm_gateway.service.OpenAiService;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -18,37 +21,33 @@ import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import jakarta.annotation.Nullable;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
- * LLM Gateway Facade — single entry point for all LLM interactions.
+ * LLM Gateway Facade (GoF <b>Facade</b>) — single entry point for all LLM interactions.
  *
  * Request pipeline:
- *   1. Resolve provider
- *   2. Sanitize prompt
+ *   1. Resolve provider (Registry of LlmServiceProvider Strategies)
+ *   2. Inbound guardrail chain (Chain of Responsibility):
+ *      sanitization → PII/secret redaction → remote LangChain guardrails service
  *   3. Redis cache lookup
  *   4. Open Micrometer Observation span
  *   5. Enrich MDC (traceId, spanId, requestId, provider)
  *   6. Delegate to provider (with Resilience4j circuit-breaker + retry)
- *   7. Attach observability metadata to response
+ *   7. Attach observability metadata; outbound redaction + optional remote output validation
  *   8. Store in cache on success
  *   9. Record gateway-level metrics
  */
@@ -56,11 +55,13 @@ import java.util.stream.Collectors;
 @Service
 public class LlmGatewayFacade {
 
-    private final Map<String, LlmServiceProvider> providers;
-    private final PromptSanitizer sanitizer;
+    private final LlmProviderRegistry providerRegistry;
+    private final GuardrailChain guardrailChain;
     private final PromptCacheService cacheService;
     private final LlmMetricsService metricsService;
     private final SensitiveDataRedactor sensitiveDataRedactor;
+    private final RemoteGuardrailClient remoteGuardrailClient;
+    private final RemoteGuardrailProperties remoteGuardrailProperties;
     private final ObservationRegistry observationRegistry;
 
     @Autowired(required = false)
@@ -84,32 +85,25 @@ public class LlmGatewayFacade {
     @Value("${llm.security.sensitive-data.enabled:true}")
     private boolean sensitiveDataEnabled;
 
-    @Value("${llm.security.sensitive-data.redact-prompt:true}")
-    private boolean redactPrompt;
-
     @Value("${llm.security.sensitive-data.redact-response:true}")
     private boolean redactResponse;
 
-    public LlmGatewayFacade(List<LlmServiceProvider> providerList,
-                             PromptSanitizer sanitizer,
+    public LlmGatewayFacade(LlmProviderRegistry providerRegistry,
+                             GuardrailChain guardrailChain,
                              PromptCacheService cacheService,
                              LlmMetricsService metricsService,
                              SensitiveDataRedactor sensitiveDataRedactor,
+                             RemoteGuardrailClient remoteGuardrailClient,
+                             RemoteGuardrailProperties remoteGuardrailProperties,
                              ObservationRegistry observationRegistry) {
-        this.sanitizer             = sanitizer;
-        this.cacheService          = cacheService;
-        this.metricsService        = metricsService;
-        this.sensitiveDataRedactor = sensitiveDataRedactor;
-        this.observationRegistry   = observationRegistry;
-        this.providers           = providerList.stream()
-                .collect(Collectors.toMap(
-                        p -> p.getProviderName().toLowerCase(),
-                        Function.identity()));
-    }
-
-    @PostConstruct
-    void logRegisteredProviders() {
-        log.info("LLM Gateway initialised with {} providers: {}", providers.size(), providers.keySet());
+        this.providerRegistry          = providerRegistry;
+        this.guardrailChain            = guardrailChain;
+        this.cacheService              = cacheService;
+        this.metricsService            = metricsService;
+        this.sensitiveDataRedactor     = sensitiveDataRedactor;
+        this.remoteGuardrailClient     = remoteGuardrailClient;
+        this.remoteGuardrailProperties = remoteGuardrailProperties;
+        this.observationRegistry       = observationRegistry;
     }
 
     @Timed(value = "llm.gateway.execution",
@@ -131,33 +125,14 @@ public class LlmGatewayFacade {
 
         try {
             // ── 1. Resolve provider ───────────────────────────────────────────
-            LlmServiceProvider providerBean = resolveProvider(provider);
+            LlmServiceProvider providerBean = providerRegistry.resolve(provider);
 
-            // ── 2. Prompt sanitization (gateway-level guard) ──────────────────
-            SanitizationResult sanitization = sanitizer.sanitize(request.getPrompt());
-            if (!sanitization.isValid()) {
-                metricsService.recordRejectedRequest(provider, "INJECTION_DETECTED");
-                log.warn("SECURITY | Prompt rejected | requestId={} | violations={}", reqId, sanitization.getViolations());
-                throw new PromptValidationException(sanitization.getViolations());
-            }
-            if (sanitization.isModified()) {
-                log.info("SECURITY | Prompt sanitized | requestId={} | warnings={}", reqId, sanitization.getWarnings());
-                request.setPrompt(sanitization.getSanitizedPrompt());
-            }
-
-            // ── 2b. Sensitive-data redaction (ALL providers, before anything leaves) ──
-            // Runs for every provider — including the custom REST ones (Google, Cohere,
-            // HuggingFace) that bypass the Spring AI advisor chain — so no PII or secret
-            // is ever forwarded to an LLM, cached, or logged.
-            if (sensitiveDataEnabled && redactPrompt) {
-                SensitiveDataRedactor.Result redaction = sensitiveDataRedactor.redact(request.getPrompt());
-                if (redaction.redacted()) {
-                    request.setPrompt(redaction.text());
-                    metricsService.recordSensitiveDataRedaction(provider, "inbound", redaction.types());
-                    log.info("SECURITY | Sensitive data redacted from prompt | requestId={} | types={}",
-                            reqId, redaction.types());
-                }
-            }
+            // ── 2. Inbound guardrail chain (Chain of Responsibility) ──────────
+            // sanitization → PII/secret redaction → remote LangChain guardrails.
+            // A step either rewrites the prompt or rejects the request with
+            // PromptValidationException (→ HTTP 400 + GuardrailViolationEvent).
+            GuardrailContext guardContext = new GuardrailContext(provider, reqId, request);
+            guardrailChain.apply(guardContext);
             metricsService.recordPromptLength(provider, request.getPrompt().length());
 
             // ── 3. Cache look-up ──────────────────────────────────────────────
@@ -210,7 +185,7 @@ public class LlmGatewayFacade {
                 response.setRequestId(reqId);
                 response.setCorrelationId(reqId);
                 response.setSessionId(request.getSessionId());
-                response.setSanitized(sanitization.isModified());
+                response.setSanitized(guardContext.isPromptModified());
                 response.setCacheHit(false);
                 response.setLatencyMs(System.currentTimeMillis() - startTime);
 
@@ -231,6 +206,12 @@ public class LlmGatewayFacade {
             // ── 7b. Redact sensitive data from the response (before cache + caller) ──
             if (sensitiveDataEnabled && redactResponse && response.getError() == null) {
                 redactResponseContent(provider, reqId, response);
+            }
+
+            // ── 7c. Optional output validation via the remote guardrails service ──
+            if (remoteGuardrailProperties.isEnabled() && remoteGuardrailProperties.isValidateOutput()
+                    && response.getError() == null) {
+                validateResponseContent(provider, reqId, response);
             }
 
             // ── 8. Store in cache on success ──────────────────────────────────
@@ -340,7 +321,7 @@ public class LlmGatewayFacade {
 
         for (String candidate : order) {
             if (candidate.equalsIgnoreCase(preferredProvider)) continue;
-            if (!providers.containsKey(candidate)) continue;
+            if (!providerRegistry.contains(candidate)) continue;
 
             log.info("AUTO_FAILOVER | trying provider={} (timeout={}s)", candidate, providerTimeoutSeconds);
             try {
@@ -478,16 +459,7 @@ public class LlmGatewayFacade {
     }
 
     public Set<String> getRegisteredProviders() {
-        return providers.keySet();
-    }
-
-    private LlmServiceProvider resolveProvider(String name) {
-        LlmServiceProvider p = providers.get(name);
-        if (p == null) {
-            throw new IllegalArgumentException(
-                    "Unknown LLM provider: '" + name + "'. Registered: " + providers.keySet());
-        }
-        return p;
+        return providerRegistry.names();
     }
 
     /**
@@ -514,6 +486,29 @@ public class LlmGatewayFacade {
             metricsService.recordSensitiveDataRedaction(provider, "outbound", types);
             log.warn("SECURITY | Sensitive data redacted from response | requestId={} | provider={} | types={}",
                     reqId, provider, types);
+        }
+    }
+
+    /**
+     * Sends the model's answer through the remote guardrails service ("output" stage).
+     * A blocked answer is never returned (or cached) — the content is replaced with a
+     * structured error so the caller knows the response was withheld, not lost.
+     */
+    private void validateResponseContent(String provider, String reqId, LlmResponse response) {
+        String content = response.getContent() != null ? response.getContent() : response.getResponse();
+        if (content == null || content.isBlank()) {
+            return;
+        }
+        GuardrailValidationResult result = remoteGuardrailClient.validate(content, "output");
+        if (!result.passed()) {
+            metricsService.recordRejectedRequest(provider, "EXTERNAL_GUARDRAIL_OUTPUT");
+            log.warn("GUARDRAIL | response blocked by guardrails service | requestId={} | provider={} | violations={}",
+                    reqId, provider, result.violations());
+            response.setContent(null);
+            response.setResponse(null);
+            response.setError("Response blocked by guardrails: " + result.violations());
+        } else if (result.sanitizedText() != null && response.getContent() != null) {
+            response.setContent(result.sanitizedText());
         }
     }
 

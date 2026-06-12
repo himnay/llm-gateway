@@ -143,6 +143,14 @@ resilience4j:
           - java.io.IOException
           - java.util.concurrent.TimeoutException
           - org.springframework.web.reactive.function.client.WebClientResponseException
+      guardrails-service:         # Protects the LangChain guardrails sidecar call
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 20s
+        permittedNumberOfCallsInHalfOpenState: 2
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        ignoreExceptions:         # Guardrail rejections are not service failures
+          - com.llm.gateway.llm_gateway.security.PromptValidationException
   retry:
     instances:
       llm-gateway:
@@ -198,6 +206,19 @@ llm:
     memory:
       ttl-hours: ${LLM_CHAT_MEMORY_TTL_HOURS:24}
   guardrails:
+    # ── External LangChain guardrails sidecar (docker-compose service: guardrails) ──
+    # The gateway POSTs every prompt to {base-url}/v1/validate BEFORE calling any LLM
+    # provider (Chain of Responsibility step 300). Optionally the LLM's answer is
+    # validated too (validate-output). Protected by its own circuit breaker
+    # (resilience4j instance "guardrails-service").
+    external:
+      enabled: ${LLM_EXTERNAL_GUARDRAILS_ENABLED:true}
+      base-url: ${LLM_EXTERNAL_GUARDRAILS_URL:http://localhost:8000}
+      timeout-ms: ${LLM_EXTERNAL_GUARDRAILS_TIMEOUT_MS:3000}
+      # fail-open=true  -> if the sidecar is down, requests continue (availability first)
+      # fail-open=false -> if the sidecar is down, requests are rejected (safety first)
+      fail-open: ${LLM_EXTERNAL_GUARDRAILS_FAIL_OPEN:true}
+      validate-output: ${LLM_EXTERNAL_GUARDRAILS_VALIDATE_OUTPUT:false}
     pii-redaction:
       enabled: ${LLM_PII_REDACTION_ENABLED:true}
     toxicity:

@@ -1,4 +1,22 @@
 services:
+  guardrails: # LangChain-based guardrails REST service — the gateway validates every prompt here before calling any LLM
+    build:
+      context: ./guardrails-service
+    image: llm-guardrails-service:latest
+    container_name: llm-guardrails
+    ports:
+      - "8000:8000"
+    environment:
+      - GUARDRAILS_BLOCKED_TOPICS=${GUARDRAILS_BLOCKED_TOPICS:-}
+      - GUARDRAILS_MAX_LENGTH=${GUARDRAILS_MAX_LENGTH:-10000}
+      - GUARDRAILS_LLM_CHECK=${GUARDRAILS_LLM_CHECK:-false}   # optional LangChain LLM-as-judge
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}                    # only needed when GUARDRAILS_LLM_CHECK=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
   postgres:
     image: postgres:18
     container_name: llm-postgres

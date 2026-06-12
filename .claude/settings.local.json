@@ -1,0 +1,80 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_claude-mem_mcp-search__smart_outline",
+      "mcp__plugin_claude-mem_mcp-search__smart_unfold",
+      "mcp__plugin_claude-mem_mcp-search__get_observations",
+      "Bash(mvn clean *)",
+      "Bash(xargs cat)",
+      "Bash(mvn dependency:tree -Dincludes=\"*jackson*\")",
+      "Bash(jar tf *)",
+      "Bash(mkdir -p /Users/himansu/llm-gateway/src/main/resources/prompts)",
+      "Bash(mkdir -p /Users/himansu/llm-gateway/src/main/java/com/llm/gateway/llm_gateway/template)",
+      "Bash(mvn test *)",
+      "Bash(python3 *)",
+      "Bash(mvn compile *)",
+      "mcp__plugin_claude-mem_mcp-search__smart_search",
+      "Bash(docker exec *)",
+      "Bash(./mvnw -v)",
+      "Bash(mvn -v)",
+      "Bash(rm -f /tmp/llmgw-startup.log)",
+      "Bash(mvn -q spring-boot:run -Dspring-boot.run.jvmArguments=\"-Dlogging.level.org.flywaydb=DEBUG -Dlogging.level.org.springframework.boot.autoconfigure.flyway=DEBUG -Dlogging.level.org.springframework.jdbc=DEBUG\")",
+      "Read(//private/tmp/**)",
+      "Bash(lsof -nP -iTCP:8080 -sTCP:LISTEN)",
+      "Bash(curl -s -m 4 http://localhost:8080/llm/actuator/health)",
+      "Bash(curl -s -m 4 http://localhost:8080/llm/actuator/prometheus)",
+      "Bash(ps -o command= -p 3099)",
+      "Bash(curl -s -m4 http://localhost:8080/llm/actuator/prometheus)",
+      "Bash(curl -s -m4 http://localhost:8080/llm/actuator/health)",
+      "Bash(rm -f /tmp/llmgw-8081.log)",
+      "Bash(mvn -q spring-boot:run -Dspring-boot.run.arguments=\"--server.port=8081 --debug\" -Dspring-boot.run.jvmArguments=\"-Dlogging.level.org.flywaydb=DEBUG\")",
+      "Bash(sed 's/\\\\x1b\\\\[[0-9;]*m//g')",
+      "Bash(mvn -q dependency:list)",
+      "Bash(mvn dependency:list)",
+      "Bash(mvn -q -o compile)",
+      "Bash(mvn -q compile)",
+      "Bash(rm -f /tmp/llmgw-verify.log)",
+      "Bash(mvn -q spring-boot:run -Dspring-boot.run.arguments=\"--server.port=8081\" -Dspring-boot.run.jvmArguments=\"-Dlogging.level.org.flywaydb=INFO\")",
+      "Bash(mvn -q clean compile)",
+      "Bash(mvn -q spring-boot:run -Dspring-boot.run.arguments=\"--server.port=8081\" -Dspring-boot.run.jvmArguments=\"-Dspring.devtools.restart.enabled=false\")",
+      "Bash(curl -s -m 15 -X POST http://localhost:8081/llm/query -H 'Content-Type: application/json' -d '{\"prompt\":\"hello\",\"provider\":\"OPENAI\"}' -o /dev/null -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(curl -s -m4 http://localhost:8081/llm/actuator/prometheus)",
+      "Bash(curl -s -m 20 -X POST http://localhost:8081/llm/query -H 'Content-Type: application/json' -d '{\"prompt\":\"hello world\",\"provider\":\"OPENAI\"}' -o /dev/null -w \"query HTTP %{http_code}\\\\n\")",
+      "Bash(curl -s -m5 http://localhost:8081/llm/providers -o /dev/null -w \"providers HTTP %{http_code}\\\\n\")",
+      "Bash(mvn -q clean test-compile)",
+      "Bash(timeout 300 mvn -q test)",
+      "Bash(mvn -q test)",
+      "Bash(echo \"TESTS_DONE exit=$?\")",
+      "Bash(echo \"exit=$?\")",
+      "Bash(mvn -q test -Dtest=SensitiveDataRedactorTest)",
+      "Bash(git mv *)",
+      "Bash(curl -s -m 15 -X POST http://localhost:8081/llm/google/chat -H 'Content-Type: application/json' -d '{\"prompt\":\"My email is john.doe@acme.com and my key is sk-abc123DEF456ghi789JKL0 please summarize\"}' -o /dev/null -w 'HTTP %{http_code}\\\\n')",
+      "Bash(mvn -q clean test)",
+      "WebFetch(domain:grafana.com)",
+      "Bash(curl -s --max-time 4 http://127.0.0.1:8080/llm/actuator/prometheus)",
+      "Bash(awk '{print $1}')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 4 http://127.0.0.1:8080/llm/actuator/prometheus)",
+      "Bash(./mvnw -q -o dependency:get -Dartifact=io.github.mweirauch:micrometer-jvm-extras:0.2.2)",
+      "Bash(timeout 280 ./mvnw -q compile)",
+      "Bash(mvn -q -DskipTests compile)",
+      "Bash(shasum -a 256)",
+      "Bash(docker volume *)",
+      "Bash(docker run *)",
+      "Bash(docker compose *)",
+      "Read(//tmp/**)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-tool-call.py"
+          }
+        ]
+      }
+    ]
+  }
+}
