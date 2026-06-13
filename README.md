@@ -21,6 +21,7 @@ A production-ready, reactive Spring Boot gateway that provides a single unified 
 - [Guardrails Service (LangServe sidecar)](#guardrails-service-langserve-sidecar)
 - [Observability](#observability)
 - [Project Structure](#project-structure)
+- [Technology Deep Dive](#technology-deep-dive)
 
 ---
 
@@ -981,3 +982,199 @@ mvn clean install          # compile + test
 mvn spring-boot:run        # run locally
 mvn clean package -DskipTests && java -jar target/llm-gateway-*.jar
 ```
+
+---
+
+## Technology Deep Dive
+
+A plain-English explanation of every technology in this repo — what it is and exactly how this project uses it.
+
+---
+
+### Spring Boot 4 + Spring WebFlux
+
+**What it is:** Spring Boot is an opinionated Java framework for building production-ready applications with minimal configuration. Spring WebFlux is its reactive, non-blocking web layer built on Project Reactor.
+
+**How it's used here:** The entire gateway is reactive. Every HTTP handler (`LlmHandler`) returns `Mono<ServerResponse>` instead of a plain object, which means the server thread is never blocked waiting for an LLM response, Redis, or Postgres. A single thread can serve thousands of concurrent requests while all the I/O happens asynchronously. The reactive pipeline looks like:
+
+```
+HTTP request → WebFlux router → LlmHandler → boundedElastic scheduler
+                                                    │
+                                        (blocking LLM call offloaded here)
+                                                    │
+                                              Mono<LlmResponse> → HTTP response
+```
+
+---
+
+### Spring AI
+
+**What it is:** Spring AI is the official Spring abstraction over LLM providers — it gives a single `ChatClient` interface regardless of which model you're calling.
+
+**How it's used here:** Each provider (OpenAI, Anthropic, Ollama, etc.) is autowired as a `ChatClient` bean. Spring AI also powers the advisor chain (toxicity filter, PII redaction, memory, metrics) that wraps every `ChatClient` call. Switching a provider is a config change, not a code change.
+
+---
+
+### PostgreSQL 18
+
+**What it is:** A relational database.
+
+**How it's used here:** Stores the API key registry — a table of SHA-256 hashed keys used to authenticate gateway callers when `GATEWAY_AUTH_ENABLED=true`. Flyway manages the schema. At runtime the gateway uses R2DBC (reactive) to query the table; Flyway uses a separate blocking JDBC connection only at startup.
+
+---
+
+### pgAdmin 4
+
+**What it is:** A web-based GUI for PostgreSQL.
+
+**How it's used here:** Runs at **http://localhost:5050** in Docker desktop mode (no login required). Use it to browse the `spring_ai` database, inspect the `api_keys` table, run ad-hoc SQL, and monitor query activity during development.
+
+```
+Browser → pgAdmin :5050 → postgres :5432 (service name inside Docker network)
+```
+
+To connect: Register Server → Host: `postgres`, Port: `5432`, DB: `spring_ai`, User/Pass: `postgres`.
+
+---
+
+### Redis
+
+**What it is:** An in-memory key-value store used as a cache and message broker.
+
+**How it's used here — two roles:**
+
+1. **Prompt cache** — before calling any LLM, the facade checks Redis for an identical prompt (SHA-256 keyed). A cache hit returns the stored response instantly, skipping the LLM entirely. TTL is configurable via `LLM_CACHE_TTL_MINUTES`.
+
+2. **Chat memory** — multi-turn `/chat` conversations store their history in Redis (via Spring AI's `ChatMemoryRepository`). Each session is keyed by `session_id` and expires after `LLM_CHAT_MEMORY_TTL_HOURS`.
+
+```
+POST /chat  →  Redis GET session:{id}   (load history)
+            →  LLM call with history
+            →  Redis SET session:{id}   (save updated history)
+```
+
+---
+
+### RedisInsight
+
+**What it is:** A web-based GUI for Redis, built by Redis Ltd.
+
+**How it's used here:** Runs at **http://localhost:5540**. Connect with Host: `redis`, leave username/password blank. Use it to inspect cached prompts, browse chat session keys, monitor memory usage, and watch live commands during debugging.
+
+---
+
+### Flyway
+
+**What it is:** A database migration tool — it tracks and applies versioned SQL scripts to keep your schema in sync with the application.
+
+**How it's used here:** On every application startup, Flyway connects via JDBC (separate from the R2DBC runtime connection) and runs any pending scripts from `src/main/resources/db/migration/`. The migration history is stored in `flyway_schema_history_gateway`. This ensures the `api_keys` table and any future schema changes are applied automatically in every environment.
+
+---
+
+### R2DBC
+
+**What it is:** Reactive Relational Database Connectivity — a non-blocking alternative to JDBC for relational databases.
+
+**How it's used here:** The `ApiKeyService` uses R2DBC's reactive PostgreSQL driver to query the `api_keys` table without blocking a thread. This keeps the full request pipeline reactive — an auth check doesn't stall the event loop.
+
+---
+
+### Resilience4j
+
+**What it is:** A lightweight fault-tolerance library for Java — provides circuit breaker, retry, rate limiter, and bulkhead patterns.
+
+**How it's used here — three patterns:**
+
+| Pattern | Instance | What it protects |
+|---|---|---|
+| **Circuit Breaker** | `llm-gateway` | Wraps LLM provider calls — opens after 50% failure rate, pauses for 30s |
+| **Circuit Breaker** | `guardrails-service` | Wraps the LangServe sidecar call — opens after 50% failure, pauses for 20s |
+| **Retry** | `llm-gateway` | Retries failed LLM calls up to 3× with exponential backoff (2s→4s→8s) |
+| **Rate Limiter** | `llm-gateway` | 60 requests/minute per gateway instance |
+
+When the guardrails circuit is open the gateway either fails-open (continues without remote validation) or fails-closed (rejects the request) based on `LLM_EXTERNAL_GUARDRAILS_FAIL_OPEN`.
+
+---
+
+### Micrometer + OpenTelemetry (OTEL)
+
+**What it is:** Micrometer is a metrics facade for JVM apps (like SLF4J but for metrics). OpenTelemetry is the industry standard for distributed tracing and telemetry.
+
+**How it's used here:**
+
+- **Metrics** — `LlmMetricsService` uses Micrometer to emit counters and histograms (`llm_provider_calls_total`, `llm_request_latency_seconds`, etc.). The Micrometer Prometheus registry exposes them at `/llm/actuator/prometheus`.
+- **Traces** — the `micrometer-tracing-bridge-otel` library connects Micrometer's tracing API to the OpenTelemetry SDK, which exports spans to Tempo via OTLP HTTP (`http://tempo:4318/v1/traces`). Every request gets a `traceId` that appears in logs and in Tempo.
+
+---
+
+### Prometheus
+
+**What it is:** An open-source metrics collection and alerting system. It scrapes HTTP endpoints for metrics data.
+
+**How it's used here:** Configured in `observability/prometheus.yml` to scrape the gateway's `/llm/actuator/prometheus` endpoint every 15 seconds. Stores the time-series data and makes it queryable via PromQL. Grafana reads from Prometheus to build dashboards.
+
+```
+Spring Boot app :8080/llm/actuator/prometheus
+        ↑  (scrape every 15s)
+   Prometheus :9090
+        ↑  (PromQL queries)
+   Grafana :3000
+```
+
+---
+
+### Grafana Tempo
+
+**What it is:** A distributed tracing backend — stores and queries traces from instrumented applications.
+
+**How it's used here:** The gateway sends every request trace to Tempo over OTLP HTTP on port `4318`. Each trace is a tree of spans — one span per significant operation (guardrails check, Redis lookup, LLM call, etc.) with its own start time, duration, and tags. In Grafana you can paste a `traceId` from a log line and see the full waterfall of that request, making it easy to identify exactly which step was slow.
+
+```
+LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph / waterfall)
+```
+
+---
+
+### Grafana Loki
+
+**What it is:** A log aggregation system designed to work alongside Prometheus and Tempo. Unlike Elasticsearch, Loki indexes only log labels (not the full text), making it very storage-efficient.
+
+**How it's used here:** Application logs are shipped to Loki and queryable in Grafana using LogQL. Because every log line includes `traceId` and `spanId`, you can jump directly from a Grafana trace span to the exact log lines emitted during that span — correlating traces and logs in one place.
+
+---
+
+### Grafana
+
+**What it is:** An open-source observability platform for visualising metrics, logs, and traces.
+
+**How it's used here:** Runs at **http://localhost:3000** (admin/admin). Provisioned automatically with three datasources (Prometheus, Tempo, Loki) and the pre-built LLM Gateway dashboard. The dashboard shows:
+- Request rate and error rate per provider
+- p50/p95/p99 latency histograms
+- Cache hit rate
+- Guardrail rejection rate
+- Circuit breaker state
+- JVM memory and GC metrics
+
+---
+
+### LangChain + LangServe
+
+**What it is:** LangChain is a Python framework for building LLM pipelines. LangServe is its REST deployment layer — it wraps any LangChain `Runnable` as a FastAPI service with standard `invoke`, `batch`, `stream`, and `playground` endpoints.
+
+**How it's used here:** The `guardrails-service/` sidecar runs a FastAPI + LangServe app that the Java gateway calls before every LLM request. It runs a pipeline of checks (prompt injection, toxicity, PII masking, blocked topics, optional LLM-as-judge) and returns a structured result. The Java gateway calls `POST /guardrails/invoke`; the playground at `/guardrails/playground` lets you test prompts manually in a browser.
+
+---
+
+### FastAPI + Uvicorn
+
+**What it is:** FastAPI is a modern Python web framework with automatic OpenAPI docs and Pydantic validation. Uvicorn is its ASGI server.
+
+**How it's used here:** Powers the guardrails sidecar alongside LangServe. The legacy `/v1/validate` and `/health` endpoints are plain FastAPI routes; the LangServe routes (`/guardrails/*`) are added on top of the same `FastAPI` app instance.
+
+---
+
+### Docker Compose
+
+**What it is:** A tool for defining and running multi-container Docker applications from a single YAML file.
+
+**How it's used here:** `docker-compose.yml` defines all 9 services as a local development stack. Services reference each other by name (e.g. the gateway connects to `postgres:5432`, pgAdmin connects to `postgres`). Healthchecks on Postgres and Redis ensure dependent services only start when their dependency is truly ready.
