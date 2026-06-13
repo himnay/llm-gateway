@@ -7,13 +7,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
-import org.springframework.data.redis.core.ReactiveValueOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 import java.util.Map;
@@ -23,11 +23,14 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @TestPropertySource(properties = {
-        "gateway.rate-limiter.enabled=false",    // disable Redis filter in tests
-        "spring.data.redis.host=localhost",
-        "spring.data.redis.port=6379"
+        "gateway.rate-limiter.enabled=false",
+        "spring.flyway.url=",
+        "spring.ai.openai.api-key=test-key",
+        "spring.ai.anthropic.api-key=test-key"
 })
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(TestcontainersConfiguration.class)
+@Testcontainers(disabledWithoutDocker = true)
 class LlmGatewayIntegrationTest {
 
     @LocalServerPort
@@ -37,12 +40,6 @@ class LlmGatewayIntegrationTest {
 
     @MockitoBean
     private LlmGatewayFacade facade;
-
-    @MockitoBean
-    private ReactiveStringRedisTemplate redisTemplate;
-
-    @MockitoBean
-    private ReactiveValueOperations<String, String> valueOps;
 
     private static final LlmResponse SUCCESS_RESPONSE = LlmResponse.builder()
             .provider("openai")
@@ -62,7 +59,6 @@ class LlmGatewayIntegrationTest {
         webTestClient = WebTestClient.bindToServer()
                 .baseUrl("http://localhost:" + port + "/llm")
                 .build();
-        when(redisTemplate.opsForValue()).thenReturn(valueOps);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
