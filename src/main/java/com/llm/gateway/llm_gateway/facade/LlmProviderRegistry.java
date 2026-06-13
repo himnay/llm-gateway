@@ -1,5 +1,6 @@
 package com.llm.gateway.llm_gateway.facade;
 
+import com.llm.gateway.llm_gateway.exception.LLMProviderNotSupportedException;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -38,14 +39,13 @@ public class LlmProviderRegistry {
     }
 
     /**
-     * @throws IllegalArgumentException when no provider is registered under {@code name}
+     * @throws LLMProviderNotSupportedException when no provider is registered under {@code name}
      *         (mapped to HTTP 400)
      */
     public LlmServiceProvider resolve(String name) {
         LlmServiceProvider provider = providers.get(name.toLowerCase());
         if (provider == null) {
-            throw new IllegalArgumentException(
-                    "Unknown LLM provider: '" + name + "'. Registered: " + providers.keySet());
+            throw new LLMProviderNotSupportedException(name, providers.keySet());
         }
         return provider;
     }

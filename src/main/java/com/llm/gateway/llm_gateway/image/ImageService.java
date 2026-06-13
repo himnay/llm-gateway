@@ -42,7 +42,7 @@ public class ImageService {
         try {
             OpenAiImageOptions options = OpenAiImageOptions.builder()
                     .model(model)
-                    .N(count)
+                    .n(count)
                     .width(dims[0])
                     .height(dims[1])
                     .responseFormat(format)

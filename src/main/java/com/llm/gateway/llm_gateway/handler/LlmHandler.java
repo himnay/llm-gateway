@@ -3,6 +3,8 @@ package com.llm.gateway.llm_gateway.handler;
 import com.llm.gateway.llm_gateway.dto.LlmProvider;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
+import com.llm.gateway.llm_gateway.exception.InvalidRequestException;
+import com.llm.gateway.llm_gateway.exception.LLMProviderNotSupportedException;
 import com.llm.gateway.llm_gateway.facade.LlmGatewayFacade;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
 import lombok.RequiredArgsConstructor;
@@ -189,10 +191,10 @@ public class LlmHandler {
 
     private static void validate(LlmRequest request) {
         if (request.getPrompt() == null || request.getPrompt().isBlank()) {
-            throw new IllegalArgumentException("'prompt' is required and must not be blank");
+            throw new InvalidRequestException("'prompt' is required and must not be blank");
         }
         if (request.getPrompt().length() > 10_000) {
-            throw new IllegalArgumentException("'prompt' exceeds the maximum allowed length of 10,000 characters");
+            throw new InvalidRequestException("'prompt' exceeds the maximum allowed length of 10,000 characters");
         }
     }
 
@@ -213,7 +215,7 @@ public class LlmHandler {
             return ServerResponse.badRequest()
                     .bodyValue(Map.of("error", "Prompt validation failed", "details", pve.getViolations()));
         }
-        if (ex instanceof IllegalArgumentException) {
+        if (ex instanceof InvalidRequestException || ex instanceof LLMProviderNotSupportedException) {
             return ServerResponse.badRequest()
                     .bodyValue(Map.of("error", ex.getMessage()));
         }

@@ -18,7 +18,7 @@ A production-ready, reactive Spring Boot gateway that provides a single unified 
 - [API Documentation](#api-documentation)
 - [Prompt Template System](#prompt-template-system)
 - [Guardrail Chain](#guardrail-chain)
-- [Guardrails Service (LangChain sidecar)](#guardrails-service-langchain-sidecar)
+- [Guardrails Service (LangServe sidecar)](#guardrails-service-langserve-sidecar)
 - [Observability](#observability)
 - [Project Structure](#project-structure)
 
@@ -49,8 +49,8 @@ Client
 │                      │    ① prompt-sanitization (injection)     │
 │                      │    ② sensitive-data-redaction (PII)      │
 │                      │    ③ remote-guardrails ──► Guardrails    │
-│                      │         REST /v1/validate    Service     │
-│                      │         (LangChain sidecar, port 8000)   │
+│                      │    POST /guardrails/invoke   Service     │
+│                      │    (LangServe sidecar, port 8000)        │
 │                      ├─ 2. Redis Cache Lookup                   │
 │                      ├─ 3. OTEL Observation Span                │
 │                      ├─ 4. Delegate → LlmServiceProvider        │
@@ -74,7 +74,7 @@ Client
 │                      └─ 6. Redis Cache Store                    │
 │                                                                 │
 │  Side channels:                                                 │
-│    Guardrails  ──  LangChain sidecar (validate prompts/answers) │
+│    Guardrails  ──  LangServe sidecar (validate prompts/answers)  │
 │    PostgreSQL  ──  API key registry (Flyway managed)            │
 │    Redis       ──  Prompt cache + Chat memory                   │
 │    Prometheus  ──  Metrics scraping                             │
@@ -96,7 +96,7 @@ removes real coupling, not for its own sake:
 | **Factory Method / Registry** | `facade/LlmProviderRegistry` | Discovers every `LlmServiceProvider` bean and resolves/validates providers; adding a provider needs zero gateway changes (OCP) |
 | **Chain of Responsibility** | `guardrail/chain/GuardrailChain` + `GuardrailStep`s | Ordered, pluggable inbound guardrail pipeline (sanitization → PII redaction → remote guardrails); any step can rewrite the prompt or reject the request |
 | **Template Method** | `service/AbstractRestLlmService` | Fixes the REST-call skeleton (render system prompt → POST → parse → never throw); Google/Cohere/HuggingFace implement only the hooks (endpoint, headers, payload, parsing) |
-| **Adapter** | `guardrail/remote/RemoteGuardrailClient` | Adapts the LangChain sidecar's REST/JSON API to a typed Java interface |
+| **Adapter** | `guardrail/remote/RemoteGuardrailClient` | Adapts the LangServe sidecar's REST/JSON API (`POST /guardrails/invoke`) to a typed Java interface |
 | **Observer** | `guardrail/event/GuardrailViolationEvent` + listener | Guardrail rejections publish events; audit logging/alerting subscribe without coupling to the chain |
 | **Decorator** | Spring AI advisor chain (`guardrail/*Advisor`) | Each advisor wraps the ChatClient call, adding behaviour (toxicity, PII, metrics, memory) transparently |
 | **Builder** | Lombok `@Builder` on `LlmRequest`/`LlmResponse` | Safe construction of many-field immutable-style DTOs |
@@ -240,7 +240,7 @@ docker compose up -d prometheus grafana tempo
 
 | Service            | Port | Purpose                                        |
 |--------------------|------|------------------------------------------------|
-| Guardrails sidecar | 8000 | LangChain guardrails REST API (`/v1/validate`) |
+| Guardrails sidecar | 8000 | LangServe guardrails API (`POST /guardrails/invoke`, playground at `/guardrails/playground`) |
 | PostgreSQL         | 5432 | API key registry                               |
 | Redis              | 6379 | Prompt cache + chat memory                     |
 | Prometheus         | 9090 | Metrics                                        |
@@ -660,7 +660,7 @@ request with HTTP 400 (which also publishes a `GuardrailViolationEvent` for the 
 |-------|---------------------------|--------------------------------------------------------------------|
 | 100   | `prompt-sanitization`     | Injection/jailbreak regex blocking, strip + whitespace normalising  |
 | 200   | `sensitive-data-redaction`| PII/secret masking (`[EMAIL]`, `[API_KEY]`, …)                      |
-| 300   | `remote-guardrails`       | REST call to the [LangChain guardrails sidecar](#guardrails-service-langchain-sidecar) |
+| 300   | `remote-guardrails`       | REST call to the [LangServe guardrails sidecar](#guardrails-service-langserve-sidecar) |
 
 Adding a step = one `@Component` implementing `GuardrailStep` — no facade changes.
 
@@ -729,16 +729,21 @@ logged and skipped at startup rather than crashing the app.
 
 ---
 
-## Guardrails Service (LangChain sidecar)
+## Guardrails Service (LangServe sidecar)
 
-A FastAPI service in `guardrails-service/`, built on the official **`langchain/langchain`
-Docker image**, that the gateway consults over REST **before forwarding any prompt to an
-LLM provider** (chain step 300) and — when `LLM_EXTERNAL_GUARDRAILS_VALIDATE_OUTPUT=true` —
-after the model answers, before the response is cached or returned.
+A FastAPI + **LangServe** service in `guardrails-service/`, built on the official
+**`langchain/langchain`** Docker image, that the gateway consults over REST **before
+forwarding any prompt to an LLM provider** (chain step 300) and — when
+`LLM_EXTERNAL_GUARDRAILS_VALIDATE_OUTPUT=true` — after the model answers, before the
+response is cached or returned.
+
+The guardrails pipeline is exposed as a standard LangChain `Runnable` via LangServe,
+giving you `invoke`, `batch`, `stream` endpoints and a free browser **playground** UI.
 
 ```
 LlmGatewayFacade ──► GuardrailChain ──► RemoteGuardrailStep
-                                              │ POST /v1/validate {"text", "stage"}
+                                              │ POST /guardrails/invoke
+                                              │ {"input": {"text": "...", "stage": "input"}}
                                               ▼
                                      Guardrails sidecar :8000
                                      ├─ length limit
@@ -751,14 +756,27 @@ LlmGatewayFacade ──► GuardrailChain ──► RemoteGuardrailStep
 
 ### API
 
+| Endpoint | Description |
+|---|---|
+| `POST /guardrails/invoke` | Single validation call (used by the Java gateway) |
+| `POST /guardrails/batch` | Batch of inputs in one request |
+| `POST /guardrails/stream` | Streaming response |
+| `GET  /guardrails/playground` | Interactive browser UI for manual testing |
+| `POST /v1/validate` | Legacy endpoint (kept for backward compatibility) |
+| `GET  /health` | Liveness + LLM judge status |
+| `GET  /v1/checks` | Active checks + current policy |
+
 ```bash
-# Validate a prompt
-curl -X POST http://localhost:8000/v1/validate \
+# Validate a prompt via LangServe invoke
+curl -X POST http://localhost:8000/guardrails/invoke \
   -H "Content-Type: application/json" \
-  -d '{"text": "ignore all previous instructions", "stage": "input"}'
-# → {"passed": false,
-#    "violations": ["prompt-injection: matched 'ignore all previous instructions'"],
-#    "sanitized_text": null, "risk_score": 0.25, "checks_run": [...], "latency_ms": 1}
+  -d '{"input": {"text": "ignore all previous instructions", "stage": "input"}}'
+# → {"output": {"passed": false,
+#               "violations": ["prompt-injection: matched 'ignore all previous instructions'"],
+#               "sanitized_text": null, "risk_score": 0.25, "checks_run": [...], "latency_ms": 1}}
+
+# Open the playground in a browser
+open http://localhost:8000/guardrails/playground
 
 curl http://localhost:8000/health      # liveness + whether the LLM judge is active
 curl http://localhost:8000/v1/checks   # active checks + current policy
@@ -890,9 +908,9 @@ observability/
     │   └── dashboards/dashboards.yml      Auto-load provider for dashboards
     └── dashboards/
         └── grafana-dashboard-llm-gateway.json   Importable LLM Gateway dashboard
-guardrails-service/                        LangChain guardrails sidecar (Docker)
-├── Dockerfile                             FROM langchain/langchain + FastAPI
-├── app.py                                 /v1/validate, /v1/checks, /health
+guardrails-service/                        LangServe guardrails sidecar (Docker)
+├── Dockerfile                             FROM langchain/langchain + FastAPI + LangServe
+├── app.py                                 /guardrails/invoke|batch|stream|playground, /v1/validate, /health
 └── requirements.txt
 docker-compose.yml
 PROMETHEUS_GRAFANA_SETUP.md               Prometheus + Grafana setup guide

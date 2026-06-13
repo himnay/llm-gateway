@@ -2,8 +2,8 @@ services:
   guardrails: # LangChain-based guardrails REST service — the gateway validates every prompt here before calling any LLM
     build:
       context: ./guardrails-service
-    image: llm-guardrails-service:latest
-    container_name: llm-guardrails
+    image: llm-langchain:latest
+    container_name: llm-langchain
     ports:
       - "8000:8000"
     environment:
@@ -34,6 +34,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  pgadmin: # http://localhost:5050 — login: admin@llm-gateway.com / admin
+    image: dpage/pgadmin4:latest
+    container_name: llm-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@llm-gateway.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"            # desktop mode — no login page
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"  # no master password prompt
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
   redis:
     image: redis:latest
     container_name: llm-redis
@@ -130,5 +146,6 @@ volumes:
   postgres_data:
   redis_data:
   redisinsight_data:
+  pgadmin_data:
   grafana-data:
   tempo-data:

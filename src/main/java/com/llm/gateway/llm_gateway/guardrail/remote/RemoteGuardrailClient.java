@@ -46,24 +46,25 @@ public class RemoteGuardrailClient {
      */
     @CircuitBreaker(name = "guardrails-service", fallbackMethod = "availabilityFallback")
     public GuardrailValidationResult validate(String text, String stage) {
+        // LangServe envelope: {"input": {...}} → {"output": {...}}
         String raw = webClient.post()
-                .uri(properties.getBaseUrl() + "/v1/validate")
+                .uri(properties.getBaseUrl() + "/guardrails/invoke")
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("text", text, "stage", stage))
+                .bodyValue(Map.of("input", Map.of("text", text, "stage", stage)))
                 .retrieve()
                 .bodyToMono(String.class)
                 .timeout(Duration.ofMillis(properties.getTimeoutMs()))
                 .block();
 
-        JsonNode root = objectMapper.readTree(raw);
+        JsonNode output = objectMapper.readTree(raw).path("output");
         List<String> violations = new ArrayList<>();
-        root.path("violations").forEach(v -> violations.add(v.asText()));
+        output.path("violations").forEach(v -> violations.add(v.asText()));
 
         return new GuardrailValidationResult(
-                root.path("passed").asBoolean(true),
+                output.path("passed").asBoolean(true),
                 violations,
-                root.hasNonNull("sanitized_text") ? root.path("sanitized_text").asText() : null,
-                root.path("risk_score").asDouble(-1));
+                output.hasNonNull("sanitized_text") ? output.path("sanitized_text").asText() : null,
+                output.path("risk_score").asDouble(-1));
     }
 
     /**

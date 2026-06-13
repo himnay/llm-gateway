@@ -57,6 +57,7 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
     baseline-description: existing schema
+    table: flyway_schema_history_gateway
   ai:
     # Disable Spring AI's own per-provider retry — the gateway's auto-failover
     # chain handles retries at a higher level. Keeping Spring AI retry enabled
@@ -207,10 +208,10 @@ llm:
       ttl-hours: ${LLM_CHAT_MEMORY_TTL_HOURS:24}
   guardrails:
     # ── External LangChain guardrails sidecar (docker-compose service: guardrails) ──
-    # The gateway POSTs every prompt to {base-url}/v1/validate BEFORE calling any LLM
-    # provider (Chain of Responsibility step 300). Optionally the LLM's answer is
-    # validated too (validate-output). Protected by its own circuit breaker
-    # (resilience4j instance "guardrails-service").
+    # The gateway POSTs every prompt to {base-url}/guardrails/invoke (LangServe) BEFORE
+    # calling any LLM provider (Chain of Responsibility step 300). Optionally the LLM's
+    # answer is validated too (validate-output). Playground UI at {base-url}/guardrails/playground.
+    # Protected by its own circuit breaker (resilience4j instance "guardrails-service").
     external:
       enabled: ${LLM_EXTERNAL_GUARDRAILS_ENABLED:true}
       base-url: ${LLM_EXTERNAL_GUARDRAILS_URL:http://localhost:8000}

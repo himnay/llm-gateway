@@ -197,3 +197,26 @@ def validate(req: ValidateRequest) -> ValidateResponse:
         checks_run=list(CHECKS.keys()),
         latency_ms=int((time.monotonic() - start) * 1000),
     )
+
+
+# ── LangServe — standard LangChain runnable API ─────────────────────────────────
+# Exposes the same guardrails pipeline via LangServe's standard endpoints:
+#   POST /guardrails/invoke      single call (used by the Java gateway)
+#   POST /guardrails/batch       batch of inputs
+#   POST /guardrails/stream      streaming (token-by-token not meaningful here, returns full result)
+#   GET  /guardrails/playground  interactive browser UI for manual testing
+#
+# Java gateway: POST /guardrails/invoke  {"input": {"text": "...", "stage": "input"}}
+# Response:                              {"output": {"passed": bool, "violations": [...], ...}}
+
+from langchain_core.runnables import RunnableLambda  # noqa: E402
+from langserve import add_routes                      # noqa: E402
+
+add_routes(
+    app,
+    RunnableLambda(lambda inp: validate(ValidateRequest(**inp))).with_types(
+        input_type=ValidateRequest,
+        output_type=ValidateResponse,
+    ),
+    path="/guardrails",
+)

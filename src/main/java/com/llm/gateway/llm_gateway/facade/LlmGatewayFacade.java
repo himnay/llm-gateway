@@ -4,6 +4,8 @@ import com.llm.gateway.llm_gateway.cache.PromptCacheService;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
 import com.llm.gateway.llm_gateway.dto.StructuredLlmResponse;
+import com.llm.gateway.llm_gateway.exception.InvalidRequestException;
+import com.llm.gateway.llm_gateway.exception.LLMProviderNotSupportedException;
 import com.llm.gateway.llm_gateway.guardrail.chain.GuardrailChain;
 import com.llm.gateway.llm_gateway.guardrail.chain.GuardrailContext;
 import com.llm.gateway.llm_gateway.guardrail.remote.GuardrailValidationResult;
@@ -381,8 +383,9 @@ public class LlmGatewayFacade {
      */
     private boolean isFailoverWorthy(Exception ex) {
         // Client errors — the same prompt will be rejected everywhere, don't failover
-        if (ex instanceof PromptValidationException) return false;
-        if (ex instanceof IllegalArgumentException)  return false;
+        if (ex instanceof PromptValidationException)        return false;
+        if (ex instanceof InvalidRequestException)           return false;
+        if (ex instanceof LLMProviderNotSupportedException)  return false;
 
         // Every other exception is a provider-side problem → try the next one
         return true;

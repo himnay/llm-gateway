@@ -1,6 +1,8 @@
 package com.llm.gateway.llm_gateway.exception;
 
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
+import com.llm.gateway.llm_gateway.exception.InvalidRequestException;
+import com.llm.gateway.llm_gateway.exception.LLMProviderNotSupportedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,11 +32,21 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles blank / oversized prompts → HTTP 400.
+     */
+    @ExceptionHandler(InvalidRequestException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidRequest(InvalidRequestException ex) {
+        log.warn("Bad request | {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage(), List.of()));
+    }
+
+    /**
      * Handles unknown / misconfigured provider names → HTTP 400.
      */
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
-        log.warn("Bad request | {}", ex.getMessage());
+    @ExceptionHandler(LLMProviderNotSupportedException.class)
+    public ResponseEntity<Map<String, Object>> handleProviderNotSupported(LLMProviderNotSupportedException ex) {
+        log.warn("Bad request | unknown provider '{}' | {}", ex.getProvider(), ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage(), List.of()));
     }
