@@ -29,19 +29,18 @@ public class SecurityConfig {
 
     private final ApiKeyService apiKeyService;
 
-    @Value("${gateway.auth.enabled:false}")
+    @Value("${gateway.auth.enabled:true}")
     private boolean authEnabled;
 
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
-        // Disable all mechanisms we don't use
         http.csrf(c -> c.disable())
             .httpBasic(b -> b.disable())
             .formLogin(f -> f.disable())
             .logout(l -> l.disable());
 
         if (!authEnabled) {
-            log.warn("SECURITY | API key authentication is DISABLED (gateway.auth.enabled=false)");
+            log.warn("SECURITY | API key authentication is DISABLED — set GATEWAY_AUTH_ENABLED=true in production");
             return http.authorizeExchange(a -> a.anyExchange().permitAll()).build();
         }
 
@@ -52,7 +51,11 @@ public class SecurityConfig {
         return http
                 .addFilterAt(apiKeyFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .authorizeExchange(a -> a
+                        // Infrastructure — always public
                         .pathMatchers("/actuator/**").permitAll()
+                        // Public gateway info endpoints (base-path /llm is prepended by webflux)
+                        .pathMatchers("/llm/health", "/llm/providers", "/llm/models").permitAll()
+                        // Everything else requires a valid API key
                         .anyExchange().authenticated()
                 )
                 .build();
@@ -78,14 +81,12 @@ public class SecurityConfig {
 
         AuthenticationWebFilter filter = new AuthenticationWebFilter(authManager);
 
-        // Extract X-API-Key header and wrap it as an unauthenticated token
         filter.setServerAuthenticationConverter(exchange -> {
             String key = exchange.getRequest().getHeaders().getFirst("X-API-Key");
             if (key == null || key.isBlank()) return Mono.empty();
             return Mono.just(new UsernamePasswordAuthenticationToken(null, key.trim()));
         });
 
-        // On auth failure → 401 JSON (not redirect)
         filter.setAuthenticationFailureHandler(
                 new ServerAuthenticationEntryPointFailureHandler(
                         new HttpStatusServerEntryPoint(HttpStatus.UNAUTHORIZED)));

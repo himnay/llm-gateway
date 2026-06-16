@@ -1,5 +1,6 @@
 package com.llm.gateway.llm_gateway.facade;
 
+import com.llm.gateway.llm_gateway.audit.RequestLogService;
 import com.llm.gateway.llm_gateway.cache.PromptCacheService;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
@@ -29,14 +30,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 
 /**
  * LLM Gateway Facade (GoF <b>Facade</b>) — single entry point for all LLM interactions.
@@ -65,6 +67,7 @@ public class LlmGatewayFacade {
     private final RemoteGuardrailClient remoteGuardrailClient;
     private final RemoteGuardrailProperties remoteGuardrailProperties;
     private final ObservationRegistry observationRegistry;
+    private final RequestLogService requestLogService;
 
     @Autowired(required = false)
     @Nullable
@@ -97,7 +100,8 @@ public class LlmGatewayFacade {
                              SensitiveDataRedactor sensitiveDataRedactor,
                              RemoteGuardrailClient remoteGuardrailClient,
                              RemoteGuardrailProperties remoteGuardrailProperties,
-                             ObservationRegistry observationRegistry) {
+                             ObservationRegistry observationRegistry,
+                             RequestLogService requestLogService) {
         this.providerRegistry          = providerRegistry;
         this.guardrailChain            = guardrailChain;
         this.cacheService              = cacheService;
@@ -106,6 +110,7 @@ public class LlmGatewayFacade {
         this.remoteGuardrailClient     = remoteGuardrailClient;
         this.remoteGuardrailProperties = remoteGuardrailProperties;
         this.observationRegistry       = observationRegistry;
+        this.requestLogService         = requestLogService;
     }
 
     @Timed(value = "llm.gateway.execution",
@@ -232,6 +237,9 @@ public class LlmGatewayFacade {
                 metricsService.recordError(provider, "LLM_ERROR");
             }
 
+            // ── 10. Fire-and-forget audit log ─────────────────────────────────
+            requestLogService.log(reqId, null, request, response).subscribe();
+
             return response;
 
         } finally {
@@ -327,12 +335,13 @@ public class LlmGatewayFacade {
 
             log.info("AUTO_FAILOVER | trying provider={} (timeout={}s)", candidate, providerTimeoutSeconds);
             try {
-                // Per-provider timeout prevents one slow/hung provider from
-                // consuming the entire gateway timeout and blocking the chain.
-                LlmResponse candidateResponse = CompletableFuture
-                        .supplyAsync(() -> execute(candidate, request))
-                        .orTimeout(providerTimeoutSeconds, TimeUnit.SECONDS)
-                        .get();
+                // Per-provider timeout — runs on boundedElastic so .block() is safe here.
+                LlmResponse candidateResponse = Mono.fromCallable(() -> execute(candidate, request))
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .timeout(Duration.ofSeconds(providerTimeoutSeconds))
+                        .block();
+
+                if (candidateResponse == null) continue;
 
                 if (candidateResponse.getError() == null) {
                     log.info("AUTO_FAILOVER | succeeded with provider={}", candidate);
@@ -350,22 +359,17 @@ public class LlmGatewayFacade {
                 // Provider returned a non-retryable error (e.g. prompt too long)
                 return candidateResponse;
 
-            } catch (ExecutionException ee) {
-                // orTimeout() wraps TimeoutException inside ExecutionException
-                if (ee.getCause() instanceof java.util.concurrent.TimeoutException) {
+            } catch (Exception ex) {
+                // Reactor's .block() wraps checked exceptions; unwrap to check for timeout.
+                Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                if (root instanceof java.util.concurrent.TimeoutException) {
                     log.warn("AUTO_FAILOVER | provider={} timed out after {}s, skipping", candidate, providerTimeoutSeconds);
                     metricsService.recordError(candidate, "FAILOVER_TIMEOUT");
-                    continue;
-                }
-                Exception cause = ee.getCause() instanceof Exception ex ? ex : ee;
-                if (isFailoverWorthy(cause)) {
-                    log.warn("AUTO_FAILOVER | provider={} failed: {}", candidate, rootMessage(cause));
+                } else if (isFailoverWorthy(ex)) {
+                    log.warn("AUTO_FAILOVER | provider={} failed: {}", candidate, rootMessage(ex));
                 } else {
-                    throw cause instanceof RuntimeException re ? re : new RuntimeException(cause);
+                    throw ex instanceof RuntimeException re ? re : new RuntimeException(ex);
                 }
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                break;
             }
         }
 
@@ -470,25 +474,12 @@ public class LlmGatewayFacade {
      * or returned to the caller. Mutates the {@code content} and {@code response} fields.
      */
     private void redactResponseContent(String provider, String reqId, LlmResponse response) {
-        boolean redacted = false;
-        java.util.Set<String> types = new java.util.LinkedHashSet<>();
-
-        SensitiveDataRedactor.Result content = sensitiveDataRedactor.redact(response.getContent());
-        if (content.redacted()) {
-            response.setContent(content.text());
-            types.addAll(content.types());
-            redacted = true;
-        }
-        SensitiveDataRedactor.Result body = sensitiveDataRedactor.redact(response.getResponse());
-        if (body.redacted()) {
-            response.setResponse(body.text());
-            types.addAll(body.types());
-            redacted = true;
-        }
-        if (redacted) {
-            metricsService.recordSensitiveDataRedaction(provider, "outbound", types);
+        SensitiveDataRedactor.Result result = sensitiveDataRedactor.redact(response.getContent());
+        if (result.redacted()) {
+            response.setContent(result.text());
+            metricsService.recordSensitiveDataRedaction(provider, "outbound", result.types());
             log.warn("SECURITY | Sensitive data redacted from response | requestId={} | provider={} | types={}",
-                    reqId, provider, types);
+                    reqId, provider, result.types());
         }
     }
 
@@ -498,19 +489,17 @@ public class LlmGatewayFacade {
      * structured error so the caller knows the response was withheld, not lost.
      */
     private void validateResponseContent(String provider, String reqId, LlmResponse response) {
-        String content = response.getContent() != null ? response.getContent() : response.getResponse();
-        if (content == null || content.isBlank()) {
-            return;
-        }
+        String content = response.getContent();
+        if (content == null || content.isBlank()) return;
+
         GuardrailValidationResult result = remoteGuardrailClient.validate(content, "output");
         if (!result.passed()) {
             metricsService.recordRejectedRequest(provider, "EXTERNAL_GUARDRAIL_OUTPUT");
             log.warn("GUARDRAIL | response blocked by guardrails service | requestId={} | provider={} | violations={}",
                     reqId, provider, result.violations());
             response.setContent(null);
-            response.setResponse(null);
             response.setError("Response blocked by guardrails: " + result.violations());
-        } else if (result.sanitizedText() != null && response.getContent() != null) {
+        } else if (result.sanitizedText() != null) {
             response.setContent(result.sanitizedText());
         }
     }

@@ -17,7 +17,6 @@ public class LlmResponse {
     private String provider;
     private String model;
     private String content;
-    private String response;
 
     @JsonProperty("completion_tokens")
     private Integer completionTokens;

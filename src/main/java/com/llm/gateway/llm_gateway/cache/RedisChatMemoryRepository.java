@@ -9,13 +9,16 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 @Slf4j
 @Primary
@@ -33,13 +36,31 @@ public class RedisChatMemoryRepository implements ChatMemoryRepository {
 
     record MessageEntry(String type, String content) {}
 
+    /**
+     * Lists all conversation IDs using SCAN instead of KEYS to avoid blocking Redis.
+     * SCAN is O(1) per call and safe for production use even with millions of keys.
+     */
     @Override
     public List<String> findConversationIds() {
-        Set<String> keys = redisTemplate.keys(KEY_PREFIX + "*");
-        if (keys == null) return List.of();
-        return keys.stream()
-                .map(k -> k.substring(KEY_PREFIX.length()))
-                .toList();
+        List<String> ids = new ArrayList<>();
+        ScanOptions opts = ScanOptions.scanOptions()
+                .match(KEY_PREFIX + "*")
+                .count(100)
+                .build();
+        try {
+            redisTemplate.execute((RedisConnection conn) -> {
+                try (Cursor<byte[]> cursor = conn.keyCommands().scan(opts)) {
+                    cursor.forEachRemaining(key -> {
+                        String keyStr = new String(key);
+                        ids.add(keyStr.substring(KEY_PREFIX.length()));
+                    });
+                }
+                return null;
+            });
+        } catch (Exception e) {
+            log.warn("CHAT_MEMORY | scan error | error={}", e.getMessage());
+        }
+        return ids;
     }
 
     @Override

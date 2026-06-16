@@ -1,13 +1,17 @@
 package com.llm.gateway.llm_gateway.exception;
 
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
-import com.llm.gateway.llm_gateway.exception.InvalidRequestException;
-import com.llm.gateway.llm_gateway.exception.LLMProviderNotSupportedException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.annotation.Order;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebExceptionHandler;
+import reactor.core.publisher.Mono;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -15,56 +19,65 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Centralised exception handler for the LLM Gateway.
+ * Gateway-level WebExceptionHandler — intercepts exceptions that escape functional
+ * route handlers (RouterFunctions). @RestControllerAdvice only covers annotation-based
+ * controllers; functional routes need this bean instead.
+ *
+ * Ordered at -2 to run after Spring's ResponseStatusExceptionHandler (-1) but before
+ * the default error handler.
  */
 @Slf4j
-@RestControllerAdvice
-public class GlobalExceptionHandler {
+@Order(-2)
+@Component
+@RequiredArgsConstructor
+public class GlobalExceptionHandler implements WebExceptionHandler {
 
-    /**
-     * Handles prompt injection / validation failures → HTTP 400.
-     */
-    @ExceptionHandler(PromptValidationException.class)
-    public ResponseEntity<Map<String, Object>> handlePromptValidation(PromptValidationException ex) {
-        log.warn("SECURITY | Prompt rejected | violations={}", ex.getViolations());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(errorBody(HttpStatus.BAD_REQUEST, "Prompt validation failed", ex.getViolations()));
+    private final ObjectMapper objectMapper;
+
+    @Override
+    public Mono<Void> handle(ServerWebExchange exchange, Throwable ex) {
+        HttpStatus status;
+        Map<String, Object> body;
+
+        if (ex instanceof PromptValidationException pve) {
+            log.warn("SECURITY | Prompt rejected | violations={}", pve.getViolations());
+            status = HttpStatus.BAD_REQUEST;
+            body = errorBody(status, "Prompt validation failed", pve.getViolations());
+
+        } else if (ex instanceof InvalidRequestException) {
+            log.warn("Bad request | {}", ex.getMessage());
+            status = HttpStatus.BAD_REQUEST;
+            body = errorBody(status, ex.getMessage(), List.of());
+
+        } else if (ex instanceof LLMProviderNotSupportedException lpe) {
+            log.warn("Unknown provider '{}' | {}", lpe.getProvider(), ex.getMessage());
+            status = HttpStatus.BAD_REQUEST;
+            body = errorBody(status, ex.getMessage(), List.of());
+
+        } else if (ex instanceof java.util.concurrent.TimeoutException) {
+            log.warn("Request timed out | {}", ex.getMessage());
+            status = HttpStatus.GATEWAY_TIMEOUT;
+            body = errorBody(status, "Request timed out", List.of());
+
+        } else {
+            log.error("Unhandled exception", ex);
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+            body = errorBody(status, "An internal error occurred. Please try again.", List.of());
+        }
+
+        exchange.getResponse().setStatusCode(status);
+        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+
+        try {
+            byte[] bytes = objectMapper.writeValueAsBytes(body);
+            DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
+            return exchange.getResponse().writeWith(Mono.just(buffer));
+        } catch (Exception e) {
+            return exchange.getResponse().setComplete();
+        }
     }
 
-    /**
-     * Handles blank / oversized prompts → HTTP 400.
-     */
-    @ExceptionHandler(InvalidRequestException.class)
-    public ResponseEntity<Map<String, Object>> handleInvalidRequest(InvalidRequestException ex) {
-        log.warn("Bad request | {}", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage(), List.of()));
-    }
-
-    /**
-     * Handles unknown / misconfigured provider names → HTTP 400.
-     */
-    @ExceptionHandler(LLMProviderNotSupportedException.class)
-    public ResponseEntity<Map<String, Object>> handleProviderNotSupported(LLMProviderNotSupportedException ex) {
-        log.warn("Bad request | unknown provider '{}' | {}", ex.getProvider(), ex.getMessage());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(errorBody(HttpStatus.BAD_REQUEST, ex.getMessage(), List.of()));
-    }
-
-    /**
-     * Catch-all for unhandled runtime exceptions → HTTP 500.
-     */
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
-        log.error("Unhandled exception", ex);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(errorBody(HttpStatus.INTERNAL_SERVER_ERROR,
-                        "An internal error occurred. Please try again.", List.of()));
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-
-    private static Map<String, Object> errorBody(HttpStatus status, String message, List<String> details) {
+    private static Map<String, Object> errorBody(HttpStatus status, String message, List<?> details) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status",    status.value());
         body.put("error",     status.getReasonPhrase());
@@ -74,4 +87,3 @@ public class GlobalExceptionHandler {
         return body;
     }
 }
-

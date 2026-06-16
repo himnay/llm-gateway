@@ -1,5 +1,6 @@
 package com.llm.gateway.llm_gateway;
 
+import com.llm.gateway.llm_gateway.audit.RequestLogService;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
 import com.llm.gateway.llm_gateway.facade.LlmGatewayFacade;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,10 +24,13 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @TestPropertySource(properties = {
+        "gateway.auth.enabled=false",
         "gateway.rate-limiter.enabled=false",
-        "spring.flyway.url=",
+        "spring.flyway.enabled=false",
         "spring.ai.openai.api-key=test-key",
-        "spring.ai.anthropic.api-key=test-key"
+        "spring.ai.anthropic.api-key=test-key",
+        "llm.external.guardrails.enabled=false",
+        "llm.guardrails.external.enabled=false"
 })
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(TestcontainersConfiguration.class)
@@ -40,6 +44,9 @@ class LlmGatewayIntegrationTest {
 
     @MockitoBean
     private LlmGatewayFacade facade;
+
+    @MockitoBean
+    private RequestLogService requestLogService;
 
     private static final LlmResponse SUCCESS_RESPONSE = LlmResponse.builder()
             .provider("openai")

@@ -25,7 +25,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      password: ${REDIS_PASSWORD:gatewayredis}
       database: 0
       timeout: 2s
       lettuce:
@@ -134,16 +134,18 @@ logging:
 
 gateway:
   auth:
-    enabled: ${GATEWAY_AUTH_ENABLED:false}
-    # Comma-separated list of valid raw API keys (only used when auth is enabled)
-    # Keys are matched against SHA-256 hashes stored in the api_keys table.
-    # Set GATEWAY_AUTH_ENABLED=true in production.
+    # SECURITY: auth is ENABLED by default — set GATEWAY_AUTH_ENABLED=false for local dev only.
+    enabled: ${GATEWAY_AUTH_ENABLED:true}
   cors:
     allowed-origins: ${GATEWAY_CORS_ORIGINS:http://localhost:3000,http://localhost:8080}
   rate-limiter:
     enabled: ${RATE_LIMITER_ENABLED:true}
     max-requests: ${RATE_LIMITER_MAX_REQUESTS:60}      # requests per window per client IP
     window-seconds: ${RATE_LIMITER_WINDOW_SECONDS:60}  # sliding window duration
+    # Comma-separated CIDRs/IPs trusted to supply X-Forwarded-For.
+    # Only requests whose actual remote IP matches one of these will honour the header.
+    # Leave empty to disable X-Forwarded-For trust (safest for direct-exposure deployments).
+    trusted-proxies: ${GATEWAY_TRUSTED_PROXIES:127.0.0.1,::1}
 
 resilience4j:
   circuitbreaker:
@@ -282,6 +284,8 @@ llm:
       redact-response: ${LLM_SENSITIVE_DATA_REDACT_RESPONSE:true} # redact before returning to caller
   request:
     timeout-seconds: ${LLM_REQUEST_TIMEOUT_SECONDS:30}
+  stream:
+    timeout-seconds: ${LLM_STREAM_TIMEOUT_SECONDS:120}
   auto-failover:
     # When enabled, /query and /chat automatically try the next provider on auth/config errors.
     # The /failover endpoint always does explicit failover regardless of this setting.

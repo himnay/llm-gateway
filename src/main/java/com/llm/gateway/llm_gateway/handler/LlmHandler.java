@@ -1,5 +1,6 @@
 package com.llm.gateway.llm_gateway.handler;
 
+import com.llm.gateway.llm_gateway.config.LlmProviderProperties;
 import com.llm.gateway.llm_gateway.dto.LlmProvider;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
@@ -21,6 +22,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,7 @@ public class LlmHandler {
     private final LlmGatewayFacade facade;
     private final StringRedisTemplate redisTemplate;
     private final ChatMemoryRepository chatMemoryRepository;
+    private final LlmProviderProperties providerProperties;
 
     @Value("${llm.request.timeout-seconds:30}")
     private int timeoutSeconds;
@@ -158,15 +161,46 @@ public class LlmHandler {
         return ok(Map.of("count", registered.size(), "providers", registered));
     }
 
+    /**
+     * Returns the configured default model for each enabled provider, plus
+     * well-known alternatives. The configured default is always listed first.
+     */
     public Mono<ServerResponse> models(ServerRequest req) {
-        Map<String, Object> models = new HashMap<>();
-        models.put("openai",      new String[]{"gpt-4o", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"});
-        models.put("anthropic",   new String[]{"claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"});
-        models.put("ollama",      new String[]{"llama3.1", "mistral", "phi3", "neural-chat"});
-        models.put("google",      new String[]{"gemini-1.5-pro-latest", "gemini-1.5-flash-latest"});
-        models.put("huggingface", new String[]{"mistralai/Mistral-7B-Instruct-v0.1", "meta-llama/Llama-2-7b-chat"});
-        models.put("cohere",      new String[]{"command-r-plus", "command-r", "command-light"});
-        return ok(models);
+        // Static known alternatives per provider (superset of what might be configured)
+        Map<String, List<String>> alternatives = Map.of(
+                "openai",      List.of("gpt-4o", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"),
+                "anthropic",   List.of("claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"),
+                "ollama",      List.of("llama3.1", "mistral", "phi3", "neural-chat"),
+                "google",      List.of("gemini-1.5-pro-latest", "gemini-1.5-flash-latest"),
+                "huggingface", List.of("mistralai/Mistral-7B-Instruct-v0.1", "meta-llama/Llama-2-7b-chat"),
+                "cohere",      List.of("command-r-plus", "command-r", "command-light")
+        );
+
+        Map<String, Object> result = new HashMap<>();
+        Set<String> enabledProviders = facade.getRegisteredProviders();
+
+        if (providerProperties.getProviders() != null) {
+            providerProperties.getProviders().forEach((provider, cfg) -> {
+                String key = provider.key();
+                if (!enabledProviders.contains(key)) return;
+                List<String> alts = alternatives.getOrDefault(key, List.of());
+                List<String> models = new java.util.ArrayList<>();
+                // Configured default first if different from the alternatives default
+                if (cfg.getModel() != null && !cfg.getModel().isBlank()) {
+                    models.add(cfg.getModel());
+                    alts.stream().filter(m -> !m.equals(cfg.getModel())).forEach(models::add);
+                } else {
+                    models.addAll(alts);
+                }
+                result.put(key, models);
+            });
+        }
+
+        // Fall back to hardcoded list for any enabled provider not in config map
+        enabledProviders.forEach(key -> result.computeIfAbsent(key, k ->
+                alternatives.getOrDefault(k, List.of())));
+
+        return ok(result);
     }
 
     /** Clears all Redis-stored conversation history for a session. */
