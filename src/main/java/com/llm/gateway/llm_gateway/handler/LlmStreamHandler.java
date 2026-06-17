@@ -1,5 +1,7 @@
 package com.llm.gateway.llm_gateway.handler;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.guardrail.chain.GuardrailChain;
 import com.llm.gateway.llm_gateway.guardrail.chain.GuardrailContext;
@@ -12,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
@@ -36,11 +39,18 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class LlmStreamHandler {
 
-    private final OpenAiService      openAiService;
+    /**
+     * Canonical SSE error payload for the streaming endpoint.
+     * Serialised to JSON and sent as {@code event: error} frames.
+     */
+    record StreamErrorEvent(String type, String code, String message, String requestId) {}
+
+    private final OpenAiService          openAiService;
     private final AnthropicClaudeService anthropicService;
-    private final OllamaService      ollamaService;
-    private final GuardrailChain     guardrailChain;
-    private final PromptSanitizer    promptSanitizer;
+    private final OllamaService          ollamaService;
+    private final GuardrailChain         guardrailChain;
+    private final PromptSanitizer        promptSanitizer;
+    private final ObjectMapper           objectMapper;
 
     @Value("${llm.stream.timeout-seconds:120}")
     private int streamTimeoutSeconds;
@@ -78,14 +88,21 @@ public class LlmStreamHandler {
                                             "Streaming not supported for provider: " + provider));
                                 };
 
+                                Flux<ServerSentEvent<String>> sseStream = tokens
+                                        .timeout(Duration.ofSeconds(streamTimeoutSeconds))
+                                        .map(token -> ServerSentEvent.<String>builder()
+                                                .event("token")
+                                                .data(token)
+                                                .build())
+                                        .onErrorResume(ex -> {
+                                            log.error("STREAM | error | provider={} | cid={} | {}", provider, cid, ex.getMessage());
+                                            return Flux.just(buildErrorEvent(cid, "PROVIDER_ERROR", ex.getMessage()));
+                                        });
+
                                 return ServerResponse.ok()
                                         .contentType(MediaType.TEXT_EVENT_STREAM)
                                         .header("X-Request-ID", cid)
-                                        .body(tokens.timeout(Duration.ofSeconds(streamTimeoutSeconds))
-                                                .onErrorResume(ex -> {
-                                                    log.error("STREAM | error | provider={} | cid={} | {}", provider, cid, ex.getMessage());
-                                                    return Flux.just("data: [ERROR] " + ex.getMessage() + "\n\n");
-                                                }), String.class);
+                                        .body(sseStream, ServerSentEvent.class);
                             });
                 })
                 .onErrorResume(PromptValidationException.class, pve -> ServerResponse.badRequest()
@@ -95,6 +112,28 @@ public class LlmStreamHandler {
                     return ServerResponse.badRequest()
                             .bodyValue(Map.of("error", ex.getMessage()));
                 });
+    }
+
+    /**
+     * Builds a standardised SSE error frame:
+     * <pre>
+     * event: error
+     * data: {"type":"error","code":"...","message":"...","requestId":"..."}
+     * </pre>
+     */
+    private ServerSentEvent<String> buildErrorEvent(String requestId, String code, String message) {
+        String safeMessage = message != null ? message : "Unknown error";
+        String data;
+        try {
+            data = objectMapper.writeValueAsString(
+                    new StreamErrorEvent("error", code, safeMessage, requestId));
+        } catch (JsonProcessingException e) {
+            data = "{\"type\":\"error\",\"code\":\"" + code + "\",\"message\":\"serialization error\",\"requestId\":\"" + requestId + "\"}";
+        }
+        return ServerSentEvent.<String>builder()
+                .event("error")
+                .data(data)
+                .build();
     }
 
     private static String correlationId(ServerRequest req) {

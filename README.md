@@ -4,6 +4,43 @@ A production-ready, reactive Spring Boot gateway that provides a single unified 
 
 ---
 
+## What's New (v2.1)
+
+Security, correctness, and feature improvements:
+
+| # | Category | Change |
+|---|----------|--------|
+| 1 | **Security** | Auth is now **enabled by default** — set `GATEWAY_AUTH_ENABLED=false` only for local dev |
+| 2 | **Security** | Redis password enforced — `REDIS_PASSWORD` defaults to `gatewayredis` in both app and Docker Compose |
+| 3 | **Security** | X-Forwarded-For only trusted from configured `GATEWAY_TRUSTED_PROXIES` (prevents IP spoofing) |
+| 4 | **Security** | Dev seed keys in `V2__seed_api_keys.sql` carry a hard ROTATE warning |
+| 5 | **Bug fix** | `GlobalExceptionHandler` was a `@RestControllerAdvice` that never fired for functional routes — replaced with a proper `WebExceptionHandler` |
+| 6 | **Bug fix** | `RedisChatMemoryRepository.findConversationIds()` used blocking `KEYS *` — replaced with non-blocking `SCAN` cursor |
+| 7 | **Bug fix** | `LlmResponse.response` (duplicate of `content`, never populated) removed |
+| 8 | **Bug fix** | `CompletableFuture.supplyAsync` in auto-failover used ForkJoinPool — replaced with `Mono.fromCallable().subscribeOn(boundedElastic)` |
+| 9 | **Reliability** | `Hooks.enableAutomaticContextPropagation()` called at startup — MDC values (traceId, requestId) now survive Reactor scheduler hops |
+| 10 | **Reliability** | Streaming handler now runs the inbound guardrail chain, enforces a per-stream timeout, and returns structured error events on failure |
+| 11 | **Performance** | `LlmMetricsService` pre-registers counters/timers at startup instead of rebuilding on every request |
+| 12 | **Feature** | `POST /llm/embed` — vector embedding endpoint (OpenAI `text-embedding-3-small` by default) |
+| 13 | **Feature** | Admin API key management — `GET/POST /llm/admin/keys`, `PATCH/DELETE /llm/admin/keys/{id}` |
+| 14 | **Feature** | Audit log — every request persisted to `request_log` table (prompt hash, provider, tokens, latency; raw prompt never stored) |
+| 15 | **Feature** | `GET /llm/models` now returns the **configured** default model per provider, not a hardcoded list |
+| 16 | **Docs** | Swagger UI available at `/llm/swagger-ui.html` (via `springdoc-openapi-starter-webflux-ui`) |
+| 17 | **Config** | `GATEWAY_TRUSTED_PROXIES` and `LLM_STREAM_TIMEOUT_SECONDS` added |
+
+---
+
+## Runtime Migration: Java 21 → 25, Spring AI → 2.0.0
+
+This service now targets **Java 25** and **Spring AI 2.0.0** (up from Java 21 and Spring AI 2.0.0-M8), inherited from the shared `super-pom` / `llm-bom` chain — no module-level `java.version`, `maven.compiler.release`, or `spring-ai.version` override exists in this repo's `pom.xml`, so the bump required no POM edits here. The CI workflow (`.github/workflows/ci.yml`) was updated to provision JDK 25 via `actions/setup-java@v4` (it previously pinned JDK 21).
+
+**Verified in this environment** (JDK 25, Docker available):
+- `mvn -o compile` — succeeds under Azul Zulu 25.0.3.
+- `mvn clean test` with a real Docker daemon — **33 tests run / 0 skipped**. 22 pass cleanly. The 11 `LlmGatewayIntegrationTest` cases (now actually exercising real Testcontainers-backed Postgres 18 and Redis containers instead of being skipped) fail, but root-caused to the same pre-existing gap described below (`RemoteGuardrailClient` needs a `Tracer` bean that nothing in the codebase provides) — not a Docker- or migration-related regression. Fixed one genuine, Docker-surfaced bug along the way: Spring Boot's R2DBC Testcontainers service-connection factory (`PostgresR2dbcDatabaseContainerConnectionDetailsFactory`) needs `org.testcontainers:r2dbc` on the classpath, which was missing from `pom.xml` — only the JDBC-flavored `org.testcontainers:postgresql` module was declared. Added the `org.testcontainers:r2dbc` test dependency; this alone fixed the `NoClassDefFoundError: org/testcontainers/r2dbc/R2DBCDatabaseContainer` failure that previously prevented the R2DBC connection factory from initializing against the real container.
+- `docker compose up -d postgres redis` + `mvn spring-boot:run` — real boot attempted against live Postgres/Redis containers. Boot proceeds well past R2DBC/Redis repository scanning and bean creation, then fails at the same `UnsatisfiedDependencyException: ... required a bean of type 'io.micrometer.tracing.Tracer' that could not be found` while wiring `RemoteGuardrailClient`, confirming this is a **pre-existing gap in in-flight (uncommitted) tracing-propagation code**, unrelated to Docker, the Java/Spring AI bump, or the R2DBC fix above — `micrometer-tracing-bridge-otel` resolves correctly on the classpath, but no `Tracer` bean is produced anywhere in the codebase. Not fixed here since it's part of someone else's in-progress tracing work, outside this verification's scope.
+
+---
+
 ## Table of Contents
 
 - [Architecture Overview](#architecture-overview)
@@ -110,10 +147,10 @@ removes real coupling, not for its own sake:
 
 | Layer            | Technology                                                           |
 |------------------|----------------------------------------------------------------------|
-| Runtime          | Java 21, Spring Boot 4.0.6                                           |
+| Runtime          | Java 25, Spring Boot 4.1.0                                           |
 | Web              | Spring WebFlux (reactive, non-blocking)                              |
 | Security         | Spring Security WebFlux + PostgreSQL API key table                   |
-| LLM Integration  | Spring AI 2.0.0-M8                                                   |
+| LLM Integration  | Spring AI 2.0.0                                                  |
 | LLM Providers    | OpenAI, Anthropic Claude, Ollama, Google Gemini, Cohere, HuggingFace |
 | Guardrails       | In-process chain + LangChain/FastAPI sidecar (REST, Docker)          |
 | Cache + Memory   | Redis (Spring Data Redis / Lettuce)                                  |
@@ -140,9 +177,13 @@ removes real coupling, not for its own sake:
 - **Sensitive-data guard (all providers)** — provider-agnostic PII + secret redaction applied in the facade on both request and response, so nothing sensitive is sent to an LLM, cached, or logged
 - **Externalised guardrail patterns** — all injection / PII / toxicity pattern lists tunable in YAML (`llm.guardrails.patterns.*`) without code changes
 - **Redis prompt cache** — SHA-256 keyed (includes system prompt, template vars, assistant message), configurable TTL
-- **Streaming** — SSE token streaming per provider
+- **Streaming** — SSE token streaming per provider (with guardrail chain + timeout + error events)
+- **Embeddings** — `POST /llm/embed` generates vector embeddings via OpenAI (or Ollama)
 - **Structured output** — typed Java record extraction from LLM responses (via facade for full observability)
-- **Request timeout** — configurable per-request timeout with 504 response
+- **Request timeout** — configurable per-request timeout with 504 response; separate stream timeout
+- **Admin API** — `GET/POST/PATCH/DELETE /llm/admin/keys` for key lifecycle management (raw key returned once on creation)
+- **Audit log** — every request written to `request_log` table (PostgreSQL) for compliance and billing; raw prompts never stored
+- **OpenAPI / Swagger UI** — live API documentation at `/llm/swagger-ui.html`
 - **X-Request-ID propagation** — correlation ID accepted from callers and echoed in response headers and body
 - **Real health check** — `/health` probes Redis connectivity
 - **Provider enable/disable** — `@ConditionalOnProperty` per service; disabled providers never start
@@ -155,7 +196,7 @@ removes real coupling, not for its own sake:
 
 | Requirement       | Version |
 |-------------------|---------|
-| Java              | 21+     |
+| Java              | 25      |
 | Maven             | 3.9+    |
 | PostgreSQL        | 16+     |
 | Redis             | 7+      |
@@ -613,6 +654,50 @@ curl -X POST http://localhost:8080/llm/openai/extract \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Extract: meeting on 2026-06-15 at 14:00 in Room 3."}'
 ```
+
+---
+
+### POST `/embed`
+
+Generate a vector embedding for the given text (OpenAI by default).
+
+```bash
+curl -X POST http://localhost:8080/llm/embed \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: llm-gateway-dev-key-2026" \
+  -d '{"text": "The quick brown fox jumps over the lazy dog."}'
+```
+
+Response includes `embedding` (float array), `dimensions`, `model`, and `provider`.
+
+---
+
+### Admin — API Key Management
+
+All routes under `/llm/admin/` require a valid `X-API-Key` header.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/admin/keys` | List all keys (names, status, last_used — never hashes) |
+| POST | `/admin/keys` | Create a new key — raw key returned **once only** |
+| PATCH | `/admin/keys/{id}` | Enable/disable or set expiry |
+| DELETE | `/admin/keys/{id}` | Permanently delete a key |
+
+```bash
+# Create a new key
+curl -X POST http://localhost:8080/llm/admin/keys \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: llm-gateway-admin-key-2026" \
+  -d '{"name": "prod-client-1", "client_id": "service-a"}'
+
+# Disable a key
+curl -X PATCH http://localhost:8080/llm/admin/keys/3 \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: llm-gateway-admin-key-2026" \
+  -d '{"enabled": false}'
+```
+
+> ⚠️ The `raw_key` field is returned **only** in the POST `/admin/keys` response. Store it securely — it cannot be retrieved again.
 
 ---
 

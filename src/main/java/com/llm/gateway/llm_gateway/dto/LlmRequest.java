@@ -58,5 +58,11 @@ public class LlmRequest {
      */
     @JsonProperty(value = "correlation_id", access = JsonProperty.Access.READ_ONLY)
     private String correlationId;
+
+    /**
+     * Optional citations from an upstream RAG call (e.g. llm-rag), supplied by the caller so the
+     * gateway can echo them back on {@link LlmResponse} untouched alongside trace/audit metadata.
+     */
+    private List<Citation> citations;
 }
 

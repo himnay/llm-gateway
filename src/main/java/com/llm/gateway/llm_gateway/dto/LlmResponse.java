@@ -7,6 +7,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -54,5 +56,8 @@ public class LlmResponse {
     /** Echoed from the X-Request-ID request header (or gateway-generated if absent). */
     @JsonProperty("correlation_id")
     private String correlationId;
+
+    /** Citations from {@link LlmRequest#getCitations()}, passed through untouched. */
+    private List<Citation> citations;
 }
 

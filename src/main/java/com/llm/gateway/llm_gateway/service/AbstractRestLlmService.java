@@ -4,6 +4,8 @@ import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
 import com.llm.gateway.llm_gateway.facade.LlmServiceProvider;
 import com.llm.gateway.llm_gateway.template.PromptTemplateService;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -32,13 +34,16 @@ public abstract class AbstractRestLlmService implements LlmServiceProvider {
     protected final WebClient webClient;
     protected final ObjectMapper objectMapper;
     protected final PromptTemplateService promptTemplateService;
+    protected final ObservationRegistry observationRegistry;
 
     protected AbstractRestLlmService(WebClient webClient,
                                      ObjectMapper objectMapper,
-                                     PromptTemplateService promptTemplateService) {
+                                     PromptTemplateService promptTemplateService,
+                                     ObservationRegistry observationRegistry) {
         this.webClient             = webClient;
         this.objectMapper          = objectMapper;
         this.promptTemplateService = promptTemplateService;
+        this.observationRegistry   = observationRegistry;
     }
 
     /** Template method — final so the error-handling contract cannot be broken. */
@@ -47,6 +52,13 @@ public abstract class AbstractRestLlmService implements LlmServiceProvider {
         String model      = request.getModel() != null ? request.getModel() : defaultModel();
         String systemText = promptTemplateService.renderSystemPrompt(getProviderName(), request);
 
+        return Observation.createNotStarted("llm.provider.execute", observationRegistry)
+                .contextualName(getProviderName() + "-execute")
+                .lowCardinalityKeyValue("provider", getProviderName())
+                .observe(() -> doExecute(request, model, systemText));
+    }
+
+    private LlmResponse doExecute(LlmRequest request, String model, String systemText) {
         log.info("Invoking {} API | model={}", displayName(), model);
         try {
             String raw = webClient.post()

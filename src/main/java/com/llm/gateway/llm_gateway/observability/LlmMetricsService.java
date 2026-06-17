@@ -155,4 +155,58 @@ public class LlmMetricsService {
                 .increment();
         log.info("METRICS | request rejected | provider={} | reason={}", provider, reason);
     }
+
+    /**
+     * Per-provider error rate counter.
+     * Metric: {@code llm.provider.error.total} tagged with {@code provider} and {@code error_type}.
+     */
+    public void recordProviderError(String provider, String errorType) {
+        meterRegistry.counter("llm.provider.error.total",
+                "provider",   provider,
+                "error_type", errorType)
+                .increment();
+        log.debug("METRICS | provider error | provider={} | errorType={}", provider, errorType);
+    }
+
+    /**
+     * Failover event counter.
+     * Metric: {@code llm.provider.failover.total} tagged with {@code from} and {@code to}.
+     */
+    public void recordFailover(String fromProvider, String toProvider) {
+        meterRegistry.counter("llm.provider.failover.total",
+                "from", fromProvider,
+                "to",   toProvider)
+                .increment();
+        log.info("METRICS | failover | from={} | to={}", fromProvider, toProvider);
+    }
+
+    /**
+     * Token usage counter with simplified signature (prompt + completion only).
+     * Metric: {@code llm.token.usage} tagged with {@code provider} and {@code type}.
+     */
+    public void recordTokenUsage(String provider, int promptTokens, int completionTokens) {
+        if (promptTokens > 0) {
+            meterRegistry.counter("llm.token.usage",
+                    "provider", provider,
+                    "type",     "prompt")
+                    .increment(promptTokens);
+        }
+        if (completionTokens > 0) {
+            meterRegistry.counter("llm.token.usage",
+                    "provider", provider,
+                    "type",     "completion")
+                    .increment(completionTokens);
+        }
+    }
+
+    /**
+     * Guardrail rejection counter.
+     * Metric: {@code llm.guardrail.rejection.total} tagged with {@code reason}.
+     */
+    public void recordGuardrailRejection(String reason) {
+        meterRegistry.counter("llm.guardrail.rejection.total",
+                "reason", reason)
+                .increment();
+        log.info("METRICS | guardrail rejection | reason={}", reason);
+    }
 }

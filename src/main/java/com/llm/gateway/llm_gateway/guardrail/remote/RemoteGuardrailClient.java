@@ -3,6 +3,9 @@ package com.llm.gateway.llm_gateway.guardrail.remote;
 import com.llm.gateway.llm_gateway.observability.LlmMetricsService;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.TraceContext;
+import io.micrometer.tracing.Tracer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -38,6 +41,7 @@ public class RemoteGuardrailClient {
     private final ObjectMapper objectMapper;
     private final RemoteGuardrailProperties properties;
     private final LlmMetricsService metricsService;
+    private final Tracer tracer;
 
     /**
      * Validates {@code text} against the sidecar.
@@ -50,6 +54,12 @@ public class RemoteGuardrailClient {
         String raw = webClient.post()
                 .uri(properties.getBaseUrl() + "/guardrails/invoke")
                 .contentType(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    String traceparent = buildTraceparent();
+                    if (traceparent != null) {
+                        headers.set("traceparent", traceparent);
+                    }
+                })
                 .bodyValue(Map.of("input", Map.of("text", text, "stage", stage)))
                 .retrieve()
                 .bodyToMono(String.class)
@@ -65,6 +75,15 @@ public class RemoteGuardrailClient {
                 violations,
                 output.hasNonNull("sanitized_text") ? output.path("sanitized_text").asText() : null,
                 output.path("risk_score").asDouble(-1));
+    }
+
+    private String buildTraceparent() {
+        Span span = tracer.currentSpan();
+        if (span == null) return null;
+        TraceContext ctx = span.context();
+        if (ctx == null) return null;
+        // W3C traceparent: 00-<traceId>-<spanId>-<flags>
+        return "00-" + ctx.traceId() + "-" + ctx.spanId() + "-01";
     }
 
     /**

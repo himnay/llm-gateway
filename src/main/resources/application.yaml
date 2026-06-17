@@ -5,11 +5,12 @@ app:
     group-id: com.llm.gateway
     artifact-id: llm-gateway
     project-version: 0.0.1-SNAPSHOT
-    spring-ai-version: 2.0.0-M8
+    spring-ai-version: 2.0.0
     database: PostgreSQL 18
 
 server:
   port: 8080
+  shutdown: graceful
 
 spring:
   application:
@@ -88,8 +89,9 @@ management:
         include: health,info,metrics,prometheus,loggers,env,circuitbreakers
   endpoint:
     health:
-      show-details: always
-      show-components: always
+      show-details: when-authorized
+      show-components: when-authorized
+      roles: ACTUATOR
     info:
       enabled: true
   info:
@@ -146,6 +148,30 @@ gateway:
     # Only requests whose actual remote IP matches one of these will honour the header.
     # Leave empty to disable X-Forwarded-For trust (safest for direct-exposure deployments).
     trusted-proxies: ${GATEWAY_TRUSTED_PROXIES:127.0.0.1,::1}
+  provider-rate-limits:
+    limits:
+      openai:
+        requests-per-minute: 60
+        tokens-per-minute: 90000
+      anthropic:
+        requests-per-minute: 40
+        tokens-per-minute: 100000
+      ollama:
+        requests-per-minute: 120
+        tokens-per-minute: 500000
+
+springdoc:
+  api-docs:
+    path: /llm/api-docs
+  swagger-ui:
+    path: /llm/swagger-ui.html
+    operationsSorter: alpha
+    tagsSorter: alpha
+    displayRequestDuration: true
+  info:
+    title: LLM Gateway API
+    description: Reactive Spring Boot gateway for OpenAI, Anthropic, Ollama, Google Gemini, Cohere and HuggingFace
+    version: 2.0.0
 
 resilience4j:
   circuitbreaker:
@@ -234,7 +260,7 @@ llm:
       timeout-ms: ${LLM_EXTERNAL_GUARDRAILS_TIMEOUT_MS:3000}
       # fail-open=true  -> if the sidecar is down, requests continue (availability first)
       # fail-open=false -> if the sidecar is down, requests are rejected (safety first)
-      fail-open: ${LLM_EXTERNAL_GUARDRAILS_FAIL_OPEN:true}
+      fail-open: ${LLM_EXTERNAL_GUARDRAILS_FAIL_OPEN:false}
       validate-output: ${LLM_EXTERNAL_GUARDRAILS_VALIDATE_OUTPUT:false}
     pii-redaction:
       enabled: ${LLM_PII_REDACTION_ENABLED:true}

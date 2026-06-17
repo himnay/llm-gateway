@@ -3,6 +3,7 @@ package com.llm.gateway.llm_gateway.service;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
 import com.llm.gateway.llm_gateway.template.PromptTemplateService;
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
@@ -35,8 +36,9 @@ public class CohereService extends AbstractRestLlmService {
     private String defaultModel;
 
     public CohereService(WebClient webClient, ObjectMapper objectMapper,
-                         PromptTemplateService promptTemplateService) {
-        super(webClient, objectMapper, promptTemplateService);
+                         PromptTemplateService promptTemplateService,
+                         ObservationRegistry observationRegistry) {
+        super(webClient, objectMapper, promptTemplateService, observationRegistry);
     }
 
     @Override

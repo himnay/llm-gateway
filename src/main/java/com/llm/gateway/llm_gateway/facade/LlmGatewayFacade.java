@@ -2,6 +2,7 @@ package com.llm.gateway.llm_gateway.facade;
 
 import com.llm.gateway.llm_gateway.audit.RequestLogService;
 import com.llm.gateway.llm_gateway.cache.PromptCacheService;
+import com.llm.gateway.llm_gateway.config.ProviderRateLimitProperties;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
 import com.llm.gateway.llm_gateway.dto.StructuredLlmResponse;
@@ -30,15 +31,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
-
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * LLM Gateway Facade (GoF <b>Facade</b>) — single entry point for all LLM interactions.
@@ -68,6 +69,7 @@ public class LlmGatewayFacade {
     private final RemoteGuardrailProperties remoteGuardrailProperties;
     private final ObservationRegistry observationRegistry;
     private final RequestLogService requestLogService;
+    private final ProviderRateLimitProperties providerRateLimitProperties;
 
     @Autowired(required = false)
     @Nullable
@@ -101,7 +103,8 @@ public class LlmGatewayFacade {
                              RemoteGuardrailClient remoteGuardrailClient,
                              RemoteGuardrailProperties remoteGuardrailProperties,
                              ObservationRegistry observationRegistry,
-                             RequestLogService requestLogService) {
+                             RequestLogService requestLogService,
+                             ProviderRateLimitProperties providerRateLimitProperties) {
         this.providerRegistry          = providerRegistry;
         this.guardrailChain            = guardrailChain;
         this.cacheService              = cacheService;
@@ -111,6 +114,7 @@ public class LlmGatewayFacade {
         this.remoteGuardrailProperties = remoteGuardrailProperties;
         this.observationRegistry       = observationRegistry;
         this.requestLogService         = requestLogService;
+        this.providerRateLimitProperties = providerRateLimitProperties;
     }
 
     @Timed(value = "llm.gateway.execution",
@@ -131,6 +135,12 @@ public class LlmGatewayFacade {
         if (request.getSessionId() != null) MDC.put("sessionId", request.getSessionId());
 
         try {
+            // ── 0. Per-provider rate limit advisory check ─────────────────────
+            if (!providerRateLimitProperties.checkAndIncrementRequest(provider)) {
+                log.warn("RATE_LIMIT | per-provider request limit exceeded | provider={} | requestId={}", provider, reqId);
+                metricsService.recordRejectedRequest(provider, "PROVIDER_RATE_LIMIT");
+            }
+
             // ── 1. Resolve provider ───────────────────────────────────────────
             LlmServiceProvider providerBean = providerRegistry.resolve(provider);
 
@@ -195,6 +205,7 @@ public class LlmGatewayFacade {
                 response.setSanitized(guardContext.isPromptModified());
                 response.setCacheHit(false);
                 response.setLatencyMs(System.currentTimeMillis() - startTime);
+                response.setCitations(request.getCitations());
 
                 observation.event(Observation.Event.of("llm.response.received"));
                 log.info("LLM | Response received | requestId={} | provider={} | latencyMs={} | error={}",
@@ -335,11 +346,9 @@ public class LlmGatewayFacade {
 
             log.info("AUTO_FAILOVER | trying provider={} (timeout={}s)", candidate, providerTimeoutSeconds);
             try {
-                // Per-provider timeout — runs on boundedElastic so .block() is safe here.
-                LlmResponse candidateResponse = Mono.fromCallable(() -> execute(candidate, request))
-                        .subscribeOn(Schedulers.boundedElastic())
-                        .timeout(Duration.ofSeconds(providerTimeoutSeconds))
-                        .block();
+                LlmResponse candidateResponse = CompletableFuture
+                        .supplyAsync(() -> execute(candidate, request))
+                        .get(providerTimeoutSeconds, TimeUnit.SECONDS);
 
                 if (candidateResponse == null) continue;
 
@@ -359,17 +368,19 @@ public class LlmGatewayFacade {
                 // Provider returned a non-retryable error (e.g. prompt too long)
                 return candidateResponse;
 
-            } catch (Exception ex) {
-                // Reactor's .block() wraps checked exceptions; unwrap to check for timeout.
-                Throwable root = ex.getCause() != null ? ex.getCause() : ex;
-                if (root instanceof java.util.concurrent.TimeoutException) {
-                    log.warn("AUTO_FAILOVER | provider={} timed out after {}s, skipping", candidate, providerTimeoutSeconds);
-                    metricsService.recordError(candidate, "FAILOVER_TIMEOUT");
-                } else if (isFailoverWorthy(ex)) {
-                    log.warn("AUTO_FAILOVER | provider={} failed: {}", candidate, rootMessage(ex));
+            } catch (TimeoutException ex) {
+                log.warn("AUTO_FAILOVER | provider={} timed out after {}s, skipping", candidate, providerTimeoutSeconds);
+                metricsService.recordError(candidate, "FAILOVER_TIMEOUT");
+            } catch (ExecutionException ex) {
+                Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                if (isFailoverWorthy(cause)) {
+                    log.warn("AUTO_FAILOVER | provider={} failed: {}", candidate, cause.getMessage());
                 } else {
-                    throw ex instanceof RuntimeException re ? re : new RuntimeException(ex);
+                    throw cause instanceof RuntimeException re ? re : new RuntimeException(cause);
                 }
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Auto-failover interrupted", ex);
             }
         }
 
@@ -385,7 +396,7 @@ public class LlmGatewayFacade {
      * problems, SDK exceptions). Only client-side prompt rejections stop the chain
      * — those will fail identically on every provider.
      */
-    private boolean isFailoverWorthy(Exception ex) {
+    private boolean isFailoverWorthy(Throwable ex) {
         // Client errors — the same prompt will be rejected everywhere, don't failover
         if (ex instanceof PromptValidationException)        return false;
         if (ex instanceof InvalidRequestException)           return false;

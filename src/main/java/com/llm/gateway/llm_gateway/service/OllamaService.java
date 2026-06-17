@@ -7,6 +7,7 @@ import com.llm.gateway.llm_gateway.facade.LlmServiceProvider;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
 import com.llm.gateway.llm_gateway.template.PromptTemplateService;
 import com.llm.gateway.llm_gateway.tools.GatewayTools;
+import io.micrometer.observation.annotation.Observed;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -45,6 +46,8 @@ public class OllamaService implements LlmServiceProvider {
     @Override
     public String getProviderName() { return PROVIDER; }
 
+    @Observed(name = "llm.provider.execute", contextualName = "ollama-execute",
+              lowCardinalityKeyValues = {"provider", "ollama"})
     @Override
     public LlmResponse execute(LlmRequest request) {
         String model         = request.getModel() != null ? request.getModel() : defaultModel;
