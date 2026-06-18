@@ -34,8 +34,8 @@ class GuardrailChainTest {
         };
     }
 
-    @Test
     @DisplayName("applies every step in list order")
+    @Test
     void appliesStepsInOrder() {
         List<String> callLog = new ArrayList<>();
         GuardrailChain chain = new GuardrailChain(
@@ -46,8 +46,8 @@ class GuardrailChainTest {
         assertThat(callLog).containsExactly("first", "second");
     }
 
-    @Test
     @DisplayName("a rewriting step marks the prompt as modified")
+    @Test
     void rewritingStepMarksPromptModified() {
         GuardrailStep rewriter = new GuardrailStep() {
             @Override public String name() { return "rewriter"; }
@@ -62,8 +62,8 @@ class GuardrailChainTest {
         assertThat(context.isPromptModified()).isTrue();
     }
 
-    @Test
     @DisplayName("a rejecting step stops the chain and publishes a violation event")
+    @Test
     void rejectionStopsChainAndPublishesEvent() {
         List<String> callLog = new ArrayList<>();
         GuardrailStep rejecting = new GuardrailStep() {
