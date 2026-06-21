@@ -21,7 +21,7 @@ spring:
     compose:
       enabled: false
   webflux:
-    base-path: /llm
+    base-path: /llm/v1
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -92,6 +92,15 @@ management:
       show-details: when-authorized
       show-components: when-authorized
       roles: ACTUATOR
+      probes:
+        enabled: true
+      group:
+        # /actuator/health/readiness — ready to accept traffic (k8s readinessProbe)
+        readiness:
+          include: readinessState,redis,r2dbc,db
+        # /actuator/health/liveness — process is alive (k8s livenessProbe)
+        liveness:
+          include: livenessState
     info:
       enabled: true
   info:
@@ -162,9 +171,9 @@ gateway:
 
 springdoc:
   api-docs:
-    path: /llm/api-docs
+    path: /llm/v1/api-docs
   swagger-ui:
-    path: /llm/swagger-ui.html
+    path: /llm/v1/swagger-ui.html
     operationsSorter: alpha
     tagsSorter: alpha
     displayRequestDuration: true

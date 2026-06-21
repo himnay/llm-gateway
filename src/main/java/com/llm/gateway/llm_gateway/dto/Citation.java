@@ -7,8 +7,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Provenance pointer for a source document backing an answer, e.g. produced by an upstream
- * RAG service (llm-rag) and passed through the gateway untouched alongside the LLM response.
+ * Provenance pointer for a source document backing an answer, e.g. produced by an upstream RAG
+ * service (llm-rag) and passed through the gateway untouched alongside the LLM response.
  */
 @Data
 @Builder
@@ -16,17 +16,17 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class Citation {
 
-    private String source;
+  private String source;
 
-    @JsonProperty("file_name")
-    private String fileName;
+  @JsonProperty("file_name")
+  private String fileName;
 
-    private String identity;
+  private String identity;
 
-    private Integer page;
+  private Integer page;
 
-    @JsonProperty("chunk_index")
-    private Integer chunkIndex;
+  @JsonProperty("chunk_index")
+  private Integer chunkIndex;
 
-    private Double score;
+  private Double score;
 }

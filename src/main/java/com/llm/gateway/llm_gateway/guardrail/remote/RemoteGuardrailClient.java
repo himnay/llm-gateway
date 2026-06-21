@@ -6,6 +6,10 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.TraceContext;
 import io.micrometer.tracing.Tracer;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -14,93 +18,98 @@ import org.springframework.web.reactive.function.client.WebClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
 /**
- * GoF <b>Adapter</b> — wraps the LangChain guardrails sidecar's REST API
- * ({@code POST /v1/validate}) behind a typed Java interface so the rest of the
- * gateway never deals with HTTP/JSON details.
+ * GoF <b>Adapter</b> — wraps the LangChain guardrails sidecar's REST API ({@code POST
+ * /v1/validate}) behind a typed Java interface so the rest of the gateway never deals with
+ * HTTP/JSON details.
  *
- * <p>Protected by its own Resilience4j circuit breaker ({@code guardrails-service});
- * when the sidecar is down or the circuit is open, the fallback applies the configured
- * availability policy: <i>fail-open</i> lets traffic continue (logged + metered),
- * <i>fail-closed</i> rejects the request.</p>
+ * <p>Protected by its own Resilience4j circuit breaker ({@code guardrails-service}); when the
+ * sidecar is down or the circuit is open, the fallback applies the configured availability policy:
+ * <i>fail-open</i> lets traffic continue (logged + metered), <i>fail-closed</i> rejects the
+ * request.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class RemoteGuardrailClient {
 
-    static final String STAGE_INPUT  = "input";
-    static final String STAGE_OUTPUT = "output";
+  static final String STAGE_INPUT = "input";
+  static final String STAGE_OUTPUT = "output";
 
-    private final WebClient webClient;
-    private final ObjectMapper objectMapper;
-    private final RemoteGuardrailProperties properties;
-    private final LlmMetricsService metricsService;
-    private final Tracer tracer;
+  private final WebClient webClient;
+  private final ObjectMapper objectMapper;
+  private final RemoteGuardrailProperties properties;
+  private final LlmMetricsService metricsService;
+  private final Tracer tracer;
 
-    /**
-     * Validates {@code text} against the sidecar.
-     *
-     * @param stage {@code "input"} (prompt, pre-LLM) or {@code "output"} (response, post-LLM)
-     */
-    @CircuitBreaker(name = "guardrails-service", fallbackMethod = "availabilityFallback")
-    public GuardrailValidationResult validate(String text, String stage) {
-        // LangServe envelope: {"input": {...}} → {"output": {...}}
-        String raw = webClient.post()
-                .uri(properties.getBaseUrl() + "/guardrails/invoke")
-                .contentType(MediaType.APPLICATION_JSON)
-                .headers(headers -> {
-                    String traceparent = buildTraceparent();
-                    if (traceparent != null) {
-                        headers.set("traceparent", traceparent);
-                    }
+  /**
+   * Validates {@code text} against the sidecar.
+   *
+   * @param stage {@code "input"} (prompt, pre-LLM) or {@code "output"} (response, post-LLM)
+   */
+  @CircuitBreaker(name = "guardrails-service", fallbackMethod = "availabilityFallback")
+  public GuardrailValidationResult validate(String text, String stage) {
+    // LangServe envelope: {"input": {...}} → {"output": {...}}
+    String raw =
+        webClient
+            .post()
+            .uri(properties.getBaseUrl() + "/guardrails/invoke")
+            .contentType(MediaType.APPLICATION_JSON)
+            .headers(
+                headers -> {
+                  String traceparent = buildTraceparent();
+                  if (traceparent != null) {
+                    headers.set("traceparent", traceparent);
+                  }
                 })
-                .bodyValue(Map.of("input", Map.of("text", text, "stage", stage)))
-                .retrieve()
-                .bodyToMono(String.class)
-                .timeout(Duration.ofMillis(properties.getTimeoutMs()))
-                .block();
+            .bodyValue(Map.of("input", Map.of("text", text, "stage", stage)))
+            .retrieve()
+            .bodyToMono(String.class)
+            .timeout(Duration.ofMillis(properties.getTimeoutMs()))
+            .block();
 
-        JsonNode output = objectMapper.readTree(raw).path("output");
-        List<String> violations = new ArrayList<>();
-        output.path("violations").forEach(v -> violations.add(v.asText()));
+    JsonNode output = objectMapper.readTree(raw).path("output");
+    List<String> violations = new ArrayList<>();
+    output.path("violations").forEach(v -> violations.add(v.asText()));
 
-        return new GuardrailValidationResult(
-                output.path("passed").asBoolean(true),
-                violations,
-                output.hasNonNull("sanitized_text") ? output.path("sanitized_text").asText() : null,
-                output.path("risk_score").asDouble(-1));
+    return new GuardrailValidationResult(
+        output.path("passed").asBoolean(true),
+        violations,
+        output.hasNonNull("sanitized_text") ? output.path("sanitized_text").asText() : null,
+        output.path("risk_score").asDouble(-1));
+  }
+
+  private String buildTraceparent() {
+    Span span = tracer.currentSpan();
+    if (span == null) return null;
+    TraceContext ctx = span.context();
+    if (ctx == null) return null;
+    // W3C traceparent: 00-<traceId>-<spanId>-<flags>
+    return "00-" + ctx.traceId() + "-" + ctx.spanId() + "-01";
+  }
+
+  /**
+   * Resilience4j fallback — invoked on transport errors, timeouts, or an open circuit. Never
+   * invoked for guardrail violations (those are a successful HTTP exchange).
+   */
+  @SuppressWarnings("unused") // invoked reflectively by Resilience4j
+  private GuardrailValidationResult availabilityFallback(
+      String text, String stage, Throwable cause) {
+    metricsService.recordError("guardrails-service", cause.getClass().getSimpleName());
+    if (properties.isFailOpen()) {
+      log.warn(
+          "GUARDRAIL | sidecar unavailable — failing OPEN (request continues) | stage={} | cause={}",
+          stage,
+          cause.toString());
+      return GuardrailValidationResult.passedResult();
     }
-
-    private String buildTraceparent() {
-        Span span = tracer.currentSpan();
-        if (span == null) return null;
-        TraceContext ctx = span.context();
-        if (ctx == null) return null;
-        // W3C traceparent: 00-<traceId>-<spanId>-<flags>
-        return "00-" + ctx.traceId() + "-" + ctx.spanId() + "-01";
-    }
-
-    /**
-     * Resilience4j fallback — invoked on transport errors, timeouts, or an open circuit.
-     * Never invoked for guardrail violations (those are a successful HTTP exchange).
-     */
-    @SuppressWarnings("unused") // invoked reflectively by Resilience4j
-    private GuardrailValidationResult availabilityFallback(String text, String stage, Throwable cause) {
-        metricsService.recordError("guardrails-service", cause.getClass().getSimpleName());
-        if (properties.isFailOpen()) {
-            log.warn("GUARDRAIL | sidecar unavailable — failing OPEN (request continues) | stage={} | cause={}",
-                    stage, cause.toString());
-            return GuardrailValidationResult.passedResult();
-        }
-        log.error("GUARDRAIL | sidecar unavailable — failing CLOSED (request rejected) | stage={}", stage, cause);
-        throw new PromptValidationException(List.of(
-                "Guardrails service is unavailable and the gateway is configured fail-closed "
-                        + "(llm.guardrails.external.fail-open=false)."));
-    }
+    log.error(
+        "GUARDRAIL | sidecar unavailable — failing CLOSED (request rejected) | stage={}",
+        stage,
+        cause);
+    throw new PromptValidationException(
+        List.of(
+            "Guardrails service is unavailable and the gateway is configured fail-closed "
+                + "(llm.guardrails.external.fail-open=false)."));
+  }
 }

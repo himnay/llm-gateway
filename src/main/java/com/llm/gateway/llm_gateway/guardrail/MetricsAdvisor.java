@@ -19,61 +19,73 @@ import reactor.core.publisher.Flux;
 @RequiredArgsConstructor
 public class MetricsAdvisor implements CallAdvisor, StreamAdvisor {
 
-    public static final String PROVIDER_PARAM = "provider";
+  public static final String PROVIDER_PARAM = "provider";
 
-    private final LlmMetricsService metricsService;
+  private final LlmMetricsService metricsService;
 
-    @Override
-    public String getName() { return getClass().getSimpleName(); }
+  @Override
+  public String getName() {
+    return getClass().getSimpleName();
+  }
 
-    @Override
-    public int getOrder() { return Ordered.HIGHEST_PRECEDENCE + 4; }
+  @Override
+  public int getOrder() {
+    return Ordered.HIGHEST_PRECEDENCE + 4;
+  }
 
-    @Override
-    public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-        long start = System.currentTimeMillis();
-        String provider = resolveProvider(request);
-        recordPromptLength(provider, AdvisorUtils.extractUserText(request));
-        try {
-            ChatClientResponse response = chain.nextCall(request);
-            recordSuccess(provider, response.chatResponse(), System.currentTimeMillis() - start);
-            return response;
-        } catch (Exception ex) {
-            metricsService.recordError(provider, ex.getClass().getSimpleName());
-            throw ex;
-        }
+  @Override
+  public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
+    long start = System.currentTimeMillis();
+    String provider = resolveProvider(request);
+    recordPromptLength(provider, AdvisorUtils.extractUserText(request));
+    try {
+      ChatClientResponse response = chain.nextCall(request);
+      recordSuccess(provider, response.chatResponse(), System.currentTimeMillis() - start);
+      return response;
+    } catch (Exception ex) {
+      metricsService.recordError(provider, ex.getClass().getSimpleName());
+      throw ex;
     }
+  }
 
-    @Override
-    public Flux<ChatClientResponse> adviseStream(ChatClientRequest request, StreamAdvisorChain chain) {
-        long start = System.currentTimeMillis();
-        String provider = resolveProvider(request);
-        recordPromptLength(provider, AdvisorUtils.extractUserText(request));
-        return chain.nextStream(request)
-                .doOnComplete(() -> {
-                    metricsService.recordRequest(provider, false);
-                    metricsService.recordLatency(provider, System.currentTimeMillis() - start);
-                })
-                .doOnError(ex -> metricsService.recordError(provider, ex.getClass().getSimpleName()));
-    }
+  @Override
+  public Flux<ChatClientResponse> adviseStream(
+      ChatClientRequest request, StreamAdvisorChain chain) {
+    long start = System.currentTimeMillis();
+    String provider = resolveProvider(request);
+    recordPromptLength(provider, AdvisorUtils.extractUserText(request));
+    return chain
+        .nextStream(request)
+        .doOnComplete(
+            () -> {
+              metricsService.recordRequest(provider, false);
+              metricsService.recordLatency(provider, System.currentTimeMillis() - start);
+            })
+        .doOnError(ex -> metricsService.recordError(provider, ex.getClass().getSimpleName()));
+  }
 
-    private String resolveProvider(ChatClientRequest request) {
-        Object p = request.context().get(PROVIDER_PARAM);
-        return p != null ? p.toString() : "unknown";
-    }
+  private String resolveProvider(ChatClientRequest request) {
+    Object p = request.context().get(PROVIDER_PARAM);
+    return p != null ? p.toString() : "unknown";
+  }
 
-    private void recordPromptLength(String provider, String text) {
-        if (text != null) metricsService.recordPromptLength(provider, text.length());
-    }
+  private void recordPromptLength(String provider, String text) {
+    if (text != null) metricsService.recordPromptLength(provider, text.length());
+  }
 
-    private void recordSuccess(String provider, ChatResponse chatResponse, long latencyMs) {
-        metricsService.recordRequest(provider, false);
-        metricsService.recordLatency(provider, latencyMs);
-        if (chatResponse != null && chatResponse.getMetadata() != null
-                && chatResponse.getMetadata().getUsage() != null) {
-            var u = chatResponse.getMetadata().getUsage();
-            log.debug("METRICS | provider={} | prompt_tokens={} | completion_tokens={} | total_tokens={}",
-                    provider, u.getPromptTokens(), u.getCompletionTokens(), u.getTotalTokens());
-        }
+  private void recordSuccess(String provider, ChatResponse chatResponse, long latencyMs) {
+    metricsService.recordRequest(provider, false);
+    metricsService.recordLatency(provider, latencyMs);
+    if (chatResponse != null
+        && chatResponse.getMetadata() != null
+        && chatResponse.getMetadata().getUsage() != null) {
+      var u = chatResponse.getMetadata().getUsage();
+      log.debug(
+          "METRICS | provider={} | prompt_tokens={} | completion_tokens={} | total_tokens={}",
+          provider,
+          u.getPromptTokens(),
+          u.getCompletionTokens(),
+          u.getTotalTokens());
     }
+  }
 }

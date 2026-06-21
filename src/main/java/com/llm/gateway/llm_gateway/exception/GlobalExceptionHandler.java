@@ -1,6 +1,10 @@
 package com.llm.gateway.llm_gateway.exception;
 
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
@@ -13,18 +17,13 @@ import org.springframework.web.server.WebExceptionHandler;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.ObjectMapper;
 
-import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
 /**
- * Gateway-level WebExceptionHandler — intercepts exceptions that escape functional
- * route handlers (RouterFunctions). @RestControllerAdvice only covers annotation-based
- * controllers; functional routes need this bean instead.
+ * Gateway-level WebExceptionHandler — intercepts exceptions that escape functional route handlers
+ * (RouterFunctions). @RestControllerAdvice only covers annotation-based controllers; functional
+ * routes need this bean instead.
  *
- * Ordered at -2 to run after Spring's ResponseStatusExceptionHandler (-1) but before
- * the default error handler.
+ * <p>Ordered at -2 to run after Spring's ResponseStatusExceptionHandler (-1) but before the default
+ * error handler.
  */
 @Slf4j
 @Order(-2)
@@ -32,58 +31,58 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class GlobalExceptionHandler implements WebExceptionHandler {
 
-    private final ObjectMapper objectMapper;
+  private final ObjectMapper objectMapper;
 
-    @Override
-    public Mono<Void> handle(ServerWebExchange exchange, Throwable ex) {
-        HttpStatus status;
-        Map<String, Object> body;
+  @Override
+  public Mono<Void> handle(ServerWebExchange exchange, Throwable ex) {
+    HttpStatus status;
+    Map<String, Object> body;
 
-        if (ex instanceof PromptValidationException pve) {
-            log.warn("SECURITY | Prompt rejected | violations={}", pve.getViolations());
-            status = HttpStatus.BAD_REQUEST;
-            body = errorBody(status, "Prompt validation failed", pve.getViolations());
+    if (ex instanceof PromptValidationException pve) {
+      log.warn("SECURITY | Prompt rejected | violations={}", pve.getViolations());
+      status = HttpStatus.BAD_REQUEST;
+      body = errorBody(status, "Prompt validation failed", pve.getViolations());
 
-        } else if (ex instanceof InvalidRequestException) {
-            log.warn("Bad request | {}", ex.getMessage());
-            status = HttpStatus.BAD_REQUEST;
-            body = errorBody(status, ex.getMessage(), List.of());
+    } else if (ex instanceof InvalidRequestException) {
+      log.warn("Bad request | {}", ex.getMessage());
+      status = HttpStatus.BAD_REQUEST;
+      body = errorBody(status, ex.getMessage(), List.of());
 
-        } else if (ex instanceof LLMProviderNotSupportedException lpe) {
-            log.warn("Unknown provider '{}' | {}", lpe.getProvider(), ex.getMessage());
-            status = HttpStatus.BAD_REQUEST;
-            body = errorBody(status, ex.getMessage(), List.of());
+    } else if (ex instanceof LLMProviderNotSupportedException lpe) {
+      log.warn("Unknown provider '{}' | {}", lpe.getProvider(), ex.getMessage());
+      status = HttpStatus.BAD_REQUEST;
+      body = errorBody(status, ex.getMessage(), List.of());
 
-        } else if (ex instanceof java.util.concurrent.TimeoutException) {
-            log.warn("Request timed out | {}", ex.getMessage());
-            status = HttpStatus.GATEWAY_TIMEOUT;
-            body = errorBody(status, "Request timed out", List.of());
+    } else if (ex instanceof java.util.concurrent.TimeoutException) {
+      log.warn("Request timed out | {}", ex.getMessage());
+      status = HttpStatus.GATEWAY_TIMEOUT;
+      body = errorBody(status, "Request timed out", List.of());
 
-        } else {
-            log.error("Unhandled exception", ex);
-            status = HttpStatus.INTERNAL_SERVER_ERROR;
-            body = errorBody(status, "An internal error occurred. Please try again.", List.of());
-        }
-
-        exchange.getResponse().setStatusCode(status);
-        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
-
-        try {
-            byte[] bytes = objectMapper.writeValueAsBytes(body);
-            DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
-            return exchange.getResponse().writeWith(Mono.just(buffer));
-        } catch (Exception e) {
-            return exchange.getResponse().setComplete();
-        }
+    } else {
+      log.error("Unhandled exception", ex);
+      status = HttpStatus.INTERNAL_SERVER_ERROR;
+      body = errorBody(status, "An internal error occurred. Please try again.", List.of());
     }
 
-    private static Map<String, Object> errorBody(HttpStatus status, String message, List<?> details) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status",    status.value());
-        body.put("error",     status.getReasonPhrase());
-        body.put("message",   message);
-        body.put("details",   details);
-        body.put("timestamp", Instant.now().toEpochMilli());
-        return body;
+    exchange.getResponse().setStatusCode(status);
+    exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+
+    try {
+      byte[] bytes = objectMapper.writeValueAsBytes(body);
+      DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
+      return exchange.getResponse().writeWith(Mono.just(buffer));
+    } catch (Exception e) {
+      return exchange.getResponse().setComplete();
     }
+  }
+
+  private static Map<String, Object> errorBody(HttpStatus status, String message, List<?> details) {
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("status", status.value());
+    body.put("error", status.getReasonPhrase());
+    body.put("message", message);
+    body.put("details", details);
+    body.put("timestamp", Instant.now().toEpochMilli());
+    return body;
+  }
 }

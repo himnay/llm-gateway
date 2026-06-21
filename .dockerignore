@@ -1,0 +1,11 @@
+target/
+.git/
+.idea/
+*.iml
+*.log
+.mvn/wrapper/
+docker/
+observability/
+guardrails-service/
+*.md
+insomnia-collection.json

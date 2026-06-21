@@ -5,8 +5,9 @@ import lombok.Data;
 
 @Data
 public class EmbeddingRequest {
-    private String text;
-    private String model;
-    @JsonProperty("session_id")
-    private String sessionId;
+  private String text;
+  private String model;
+
+  @JsonProperty("session_id")
+  private String sessionId;
 }

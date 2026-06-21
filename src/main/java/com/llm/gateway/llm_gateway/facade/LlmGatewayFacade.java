@@ -25,12 +25,6 @@ import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import jakarta.annotation.Nullable;
-import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -40,486 +34,537 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
 
 /**
  * LLM Gateway Facade (GoF <b>Facade</b>) — single entry point for all LLM interactions.
  *
- * Request pipeline:
- *   1. Resolve provider (Registry of LlmServiceProvider Strategies)
- *   2. Inbound guardrail chain (Chain of Responsibility):
- *      sanitization → PII/secret redaction → remote LangChain guardrails service
- *   3. Redis cache lookup
- *   4. Open Micrometer Observation span
- *   5. Enrich MDC (traceId, spanId, requestId, provider)
- *   6. Delegate to provider (with Resilience4j circuit-breaker + retry)
- *   7. Attach observability metadata; outbound redaction + optional remote output validation
- *   8. Store in cache on success
- *   9. Record gateway-level metrics
+ * <p>Request pipeline: 1. Resolve provider (Registry of LlmServiceProvider Strategies) 2. Inbound
+ * guardrail chain (Chain of Responsibility): sanitization → PII/secret redaction → remote LangChain
+ * guardrails service 3. Redis cache lookup 4. Open Micrometer Observation span 5. Enrich MDC
+ * (traceId, spanId, requestId, provider) 6. Delegate to provider (with Resilience4j circuit-breaker
+ * + retry) 7. Attach observability metadata; outbound redaction + optional remote output validation
+ * 8. Store in cache on success 9. Record gateway-level metrics
  */
 @Slf4j
 @Service
 public class LlmGatewayFacade {
 
-    private final LlmProviderRegistry providerRegistry;
-    private final GuardrailChain guardrailChain;
-    private final PromptCacheService cacheService;
-    private final LlmMetricsService metricsService;
-    private final SensitiveDataRedactor sensitiveDataRedactor;
-    private final RemoteGuardrailClient remoteGuardrailClient;
-    private final RemoteGuardrailProperties remoteGuardrailProperties;
-    private final ObservationRegistry observationRegistry;
-    private final RequestLogService requestLogService;
-    private final ProviderRateLimitProperties providerRateLimitProperties;
+  private final LlmProviderRegistry providerRegistry;
+  private final GuardrailChain guardrailChain;
+  private final PromptCacheService cacheService;
+  private final LlmMetricsService metricsService;
+  private final SensitiveDataRedactor sensitiveDataRedactor;
+  private final RemoteGuardrailClient remoteGuardrailClient;
+  private final RemoteGuardrailProperties remoteGuardrailProperties;
+  private final ObservationRegistry observationRegistry;
+  private final RequestLogService requestLogService;
+  private final ProviderRateLimitProperties providerRateLimitProperties;
 
-    @Autowired(required = false)
-    @Nullable
-    private Tracer tracer;
+  @Autowired(required = false)
+  @Nullable
+  private Tracer tracer;
 
-    // Injected directly for structured-output extraction (OpenAI-only feature)
-    @Autowired(required = false)
-    @Nullable
-    private OpenAiService openAiService;
+  // Injected directly for structured-output extraction (OpenAI-only feature)
+  @Autowired(required = false)
+  @Nullable
+  private OpenAiService openAiService;
 
-    @Value("${llm.auto-failover.enabled:true}")
-    private boolean autoFailoverEnabled;
+  @Value("${llm.auto-failover.enabled:true}")
+  private boolean autoFailoverEnabled;
 
-    @Value("${llm.auto-failover.order:openai,anthropic,google,cohere,huggingface,ollama}")
-    private String autoFailoverOrderRaw;
+  @Value("${llm.auto-failover.order:openai,anthropic,google,cohere,huggingface,ollama}")
+  private String autoFailoverOrderRaw;
 
-    @Value("${llm.auto-failover.provider-timeout-seconds:10}")
-    private int providerTimeoutSeconds;
+  @Value("${llm.auto-failover.provider-timeout-seconds:10}")
+  private int providerTimeoutSeconds;
 
-    @Value("${llm.security.sensitive-data.enabled:true}")
-    private boolean sensitiveDataEnabled;
+  @Value("${llm.security.sensitive-data.enabled:true}")
+  private boolean sensitiveDataEnabled;
 
-    @Value("${llm.security.sensitive-data.redact-response:true}")
-    private boolean redactResponse;
+  @Value("${llm.security.sensitive-data.redact-response:true}")
+  private boolean redactResponse;
 
-    public LlmGatewayFacade(LlmProviderRegistry providerRegistry,
-                             GuardrailChain guardrailChain,
-                             PromptCacheService cacheService,
-                             LlmMetricsService metricsService,
-                             SensitiveDataRedactor sensitiveDataRedactor,
-                             RemoteGuardrailClient remoteGuardrailClient,
-                             RemoteGuardrailProperties remoteGuardrailProperties,
-                             ObservationRegistry observationRegistry,
-                             RequestLogService requestLogService,
-                             ProviderRateLimitProperties providerRateLimitProperties) {
-        this.providerRegistry          = providerRegistry;
-        this.guardrailChain            = guardrailChain;
-        this.cacheService              = cacheService;
-        this.metricsService            = metricsService;
-        this.sensitiveDataRedactor     = sensitiveDataRedactor;
-        this.remoteGuardrailClient     = remoteGuardrailClient;
-        this.remoteGuardrailProperties = remoteGuardrailProperties;
-        this.observationRegistry       = observationRegistry;
-        this.requestLogService         = requestLogService;
-        this.providerRateLimitProperties = providerRateLimitProperties;
-    }
+  public LlmGatewayFacade(
+      LlmProviderRegistry providerRegistry,
+      GuardrailChain guardrailChain,
+      PromptCacheService cacheService,
+      LlmMetricsService metricsService,
+      SensitiveDataRedactor sensitiveDataRedactor,
+      RemoteGuardrailClient remoteGuardrailClient,
+      RemoteGuardrailProperties remoteGuardrailProperties,
+      ObservationRegistry observationRegistry,
+      RequestLogService requestLogService,
+      ProviderRateLimitProperties providerRateLimitProperties) {
+    this.providerRegistry = providerRegistry;
+    this.guardrailChain = guardrailChain;
+    this.cacheService = cacheService;
+    this.metricsService = metricsService;
+    this.sensitiveDataRedactor = sensitiveDataRedactor;
+    this.remoteGuardrailClient = remoteGuardrailClient;
+    this.remoteGuardrailProperties = remoteGuardrailProperties;
+    this.observationRegistry = observationRegistry;
+    this.requestLogService = requestLogService;
+    this.providerRateLimitProperties = providerRateLimitProperties;
+  }
 
-    @Timed(value = "llm.gateway.execution",
-           description = "End-to-end turnaround time of a single gateway LLM call",
-           histogram = true,
-           extraTags = {"operation", "execute"})
-    @Retry(name = "llm-gateway", fallbackMethod = "retryFallback")
-    @CircuitBreaker(name = "llm-gateway", fallbackMethod = "circuitBreakerFallback")
-    public LlmResponse execute(String providerName, LlmRequest request) {
-        long   startTime = System.currentTimeMillis();
-        // Honour incoming correlation ID from the handler (X-Request-ID header)
-        String reqId    = request.getCorrelationId() != null
-                ? request.getCorrelationId() : UUID.randomUUID().toString();
-        String provider  = providerName.toLowerCase();
+  @Timed(
+      value = "llm.gateway.execution",
+      description = "End-to-end turnaround time of a single gateway LLM call",
+      histogram = true,
+      extraTags = {"operation", "execute"})
+  @Retry(name = "llm-gateway", fallbackMethod = "retryFallback")
+  @CircuitBreaker(name = "llm-gateway", fallbackMethod = "circuitBreakerFallback")
+  public LlmResponse execute(String providerName, LlmRequest request) {
+    long startTime = System.currentTimeMillis();
+    // Honour incoming correlation ID from the handler (X-Request-ID header)
+    String reqId =
+        request.getCorrelationId() != null
+            ? request.getCorrelationId()
+            : UUID.randomUUID().toString();
+    String provider = providerName.toLowerCase();
 
-        MDC.put("requestId", reqId);
-        MDC.put("provider",  provider);
-        if (request.getSessionId() != null) MDC.put("sessionId", request.getSessionId());
+    MDC.put("requestId", reqId);
+    MDC.put("provider", provider);
+    if (request.getSessionId() != null) MDC.put("sessionId", request.getSessionId());
 
-        try {
-            // ── 0. Per-provider rate limit advisory check ─────────────────────
-            if (!providerRateLimitProperties.checkAndIncrementRequest(provider)) {
-                log.warn("RATE_LIMIT | per-provider request limit exceeded | provider={} | requestId={}", provider, reqId);
-                metricsService.recordRejectedRequest(provider, "PROVIDER_RATE_LIMIT");
-            }
+    try {
+      // ── 0. Per-provider rate limit advisory check ─────────────────────
+      if (!providerRateLimitProperties.checkAndIncrementRequest(provider)) {
+        log.warn(
+            "RATE_LIMIT | per-provider request limit exceeded | provider={} | requestId={}",
+            provider,
+            reqId);
+        metricsService.recordRejectedRequest(provider, "PROVIDER_RATE_LIMIT");
+      }
 
-            // ── 1. Resolve provider ───────────────────────────────────────────
-            LlmServiceProvider providerBean = providerRegistry.resolve(provider);
+      // ── 1. Resolve provider ───────────────────────────────────────────
+      LlmServiceProvider providerBean = providerRegistry.resolve(provider);
 
-            // ── 2. Inbound guardrail chain (Chain of Responsibility) ──────────
-            // sanitization → PII/secret redaction → remote LangChain guardrails.
-            // A step either rewrites the prompt or rejects the request with
-            // PromptValidationException (→ HTTP 400 + GuardrailViolationEvent).
-            GuardrailContext guardContext = new GuardrailContext(provider, reqId, request);
-            guardrailChain.apply(guardContext);
-            metricsService.recordPromptLength(provider, request.getPrompt().length());
+      // ── 2. Inbound guardrail chain (Chain of Responsibility) ──────────
+      // sanitization → PII/secret redaction → remote LangChain guardrails.
+      // A step either rewrites the prompt or rejects the request with
+      // PromptValidationException (→ HTTP 400 + GuardrailViolationEvent).
+      GuardrailContext guardContext = new GuardrailContext(provider, reqId, request);
+      guardrailChain.apply(guardContext);
+      metricsService.recordPromptLength(provider, request.getPrompt().length());
 
-            // ── 3. Cache look-up ──────────────────────────────────────────────
-            Optional<LlmResponse> cached = cacheService.get(provider, request);
-            if (cached.isPresent()) {
-                LlmResponse hit = cached.get();
-                hit.setCacheHit(true);
-                hit.setRequestId(reqId);
-                hit.setCorrelationId(reqId);
-                hit.setSessionId(request.getSessionId());
-                hit.setLatencyMs(System.currentTimeMillis() - startTime);
-                metricsService.recordCacheHit(provider);
-                log.info("CACHE | HIT | requestId={} | provider={}", reqId, provider);
-                return hit;
-            }
+      // ── 3. Cache look-up ──────────────────────────────────────────────
+      Optional<LlmResponse> cached = cacheService.get(provider, request);
+      if (cached.isPresent()) {
+        LlmResponse hit = cached.get();
+        hit.setCacheHit(true);
+        hit.setRequestId(reqId);
+        hit.setCorrelationId(reqId);
+        hit.setSessionId(request.getSessionId());
+        hit.setLatencyMs(System.currentTimeMillis() - startTime);
+        metricsService.recordCacheHit(provider);
+        log.info("CACHE | HIT | requestId={} | provider={}", reqId, provider);
+        return hit;
+      }
 
-            // ── 4. Open Observation span ──────────────────────────────────────
-            Observation observation = Observation.createNotStarted("llm.request", observationRegistry)
-                    .contextualName("LLM " + provider + " call")
-                    .lowCardinalityKeyValue("provider", provider)
-                    .lowCardinalityKeyValue("model", request.getModel() != null ? request.getModel() : "default")
-                    .highCardinalityKeyValue("prompt.length", String.valueOf(request.getPrompt().length()))
-                    .highCardinalityKeyValue("request.id", reqId)
-                    .start();
+      // ── 4. Open Observation span ──────────────────────────────────────
+      Observation observation =
+          Observation.createNotStarted("llm.request", observationRegistry)
+              .contextualName("LLM " + provider + " call")
+              .lowCardinalityKeyValue("provider", provider)
+              .lowCardinalityKeyValue(
+                  "model", request.getModel() != null ? request.getModel() : "default")
+              .highCardinalityKeyValue(
+                  "prompt.length", String.valueOf(request.getPrompt().length()))
+              .highCardinalityKeyValue("request.id", reqId)
+              .start();
 
-            LlmResponse response;
-            try {
-                // ── 5. Enrich MDC with trace IDs ──────────────────────────────
-                String traceId = MDC.get("traceId") != null ? MDC.get("traceId") : "unknown";
-                String spanId  = MDC.get("spanId")  != null ? MDC.get("spanId")  : "unknown";
-                if (tracer != null) {
-                    Span currentSpan = tracer.currentSpan();
-                    if (currentSpan != null) {
-                        traceId = currentSpan.context().traceId();
-                        spanId  = currentSpan.context().spanId();
-                    }
-                }
-                MDC.put("traceId", traceId);
-                MDC.put("spanId",  spanId);
-
-                log.info("LLM | Calling provider | requestId={} | traceId={} | provider={} | promptLen={}",
-                        reqId, traceId, provider, request.getPrompt().length());
-
-                // ── 6. Delegate to provider ───────────────────────────────────
-                response = providerBean.execute(request);
-
-                // ── 7. Attach observability metadata ──────────────────────────
-                response.setTraceId(traceId);
-                response.setSpanId(spanId);
-                response.setRequestId(reqId);
-                response.setCorrelationId(reqId);
-                response.setSessionId(request.getSessionId());
-                response.setSanitized(guardContext.isPromptModified());
-                response.setCacheHit(false);
-                response.setLatencyMs(System.currentTimeMillis() - startTime);
-                response.setCitations(request.getCitations());
-
-                observation.event(Observation.Event.of("llm.response.received"));
-                log.info("LLM | Response received | requestId={} | provider={} | latencyMs={} | error={}",
-                        reqId, provider, response.getLatencyMs(), response.getError());
-
-            } catch (Exception ex) {
-                observation.error(ex);
-                metricsService.recordError(provider, ex.getClass().getSimpleName());
-                metricsService.recordProviderCall(provider, request.getModel(), "error");
-                log.error("LLM | Provider call failed | requestId={} | provider={}", reqId, provider, ex);
-                throw ex;
-            } finally {
-                observation.stop();
-            }
-
-            // ── 7b. Redact sensitive data from the response (before cache + caller) ──
-            if (sensitiveDataEnabled && redactResponse && response.getError() == null) {
-                redactResponseContent(provider, reqId, response);
-            }
-
-            // ── 7c. Optional output validation via the remote guardrails service ──
-            if (remoteGuardrailProperties.isEnabled() && remoteGuardrailProperties.isValidateOutput()
-                    && response.getError() == null) {
-                validateResponseContent(provider, reqId, response);
-            }
-
-            // ── 8. Store in cache on success ──────────────────────────────────
-            if (response.getError() == null) {
-                cacheService.put(provider, request, response);
-            }
-
-            // ── 9. Record gateway-level metrics ───────────────────────────────
-            metricsService.recordRequest(provider, false);
-            metricsService.recordLatency(provider, response.getLatencyMs());
-            metricsService.recordProviderCall(provider, response.getModel(),
-                    response.getError() != null ? "error" : "success");
-            metricsService.recordTokenUsage(provider, response.getModel(),
-                    response.getPromptTokens(), response.getCompletionTokens(), response.getTotalTokens());
-            if (response.getError() != null) {
-                metricsService.recordError(provider, "LLM_ERROR");
-            }
-
-            // ── 10. Fire-and-forget audit log ─────────────────────────────────
-            requestLogService.log(reqId, null, request, response).subscribe();
-
-            return response;
-
-        } finally {
-            MDC.remove("requestId");
-            MDC.remove("provider");
-            MDC.remove("sessionId");
-            MDC.remove("traceId");
-            MDC.remove("spanId");
+      LlmResponse response;
+      try {
+        // ── 5. Enrich MDC with trace IDs ──────────────────────────────
+        String traceId = MDC.get("traceId") != null ? MDC.get("traceId") : "unknown";
+        String spanId = MDC.get("spanId") != null ? MDC.get("spanId") : "unknown";
+        if (tracer != null) {
+          Span currentSpan = tracer.currentSpan();
+          if (currentSpan != null) {
+            traceId = currentSpan.context().traceId();
+            spanId = currentSpan.context().spanId();
+          }
         }
-    }
+        MDC.put("traceId", traceId);
+        MDC.put("spanId", spanId);
 
-    /**
-     * Tries each provider in order, returning the first successful response.
-     */
-    @Timed(value = "llm.gateway.execution",
-           description = "End-to-end turnaround time of a single gateway LLM call",
-           histogram = true,
-           extraTags = {"operation", "failover"})
-    public LlmResponse executeWithFailover(List<String> providerChain, LlmRequest request) {
-        Exception lastException = null;
-        for (String provider : providerChain) {
-            try {
-                log.info("FAILOVER | Trying provider={} | chain={}", provider, providerChain);
-                LlmResponse response = execute(provider, request);
-                if (response.getError() == null) {
-                    response.setProvider(provider + " (failover)");
-                    return response;
-                }
-                log.warn("FAILOVER | Provider={} returned error={}, trying next", provider, response.getError());
-            } catch (Exception ex) {
-                log.warn("FAILOVER | Provider={} threw exception={}, trying next", provider, ex.getMessage());
-                lastException = ex;
-            }
+        log.info(
+            "LLM | Calling provider | requestId={} | traceId={} | provider={} | promptLen={}",
+            reqId,
+            traceId,
+            provider,
+            request.getPrompt().length());
+
+        // ── 6. Delegate to provider ───────────────────────────────────
+        response = providerBean.execute(request);
+
+        // ── 7. Attach observability metadata ──────────────────────────
+        response.setTraceId(traceId);
+        response.setSpanId(spanId);
+        response.setRequestId(reqId);
+        response.setCorrelationId(reqId);
+        response.setSessionId(request.getSessionId());
+        response.setSanitized(guardContext.isPromptModified());
+        response.setCacheHit(false);
+        response.setLatencyMs(System.currentTimeMillis() - startTime);
+        response.setCitations(request.getCitations());
+
+        observation.event(Observation.Event.of("llm.response.received"));
+        log.info(
+            "LLM | Response received | requestId={} | provider={} | latencyMs={} | error={}",
+            reqId,
+            provider,
+            response.getLatencyMs(),
+            response.getError());
+
+      } catch (Exception ex) {
+        observation.error(ex);
+        metricsService.recordError(provider, ex.getClass().getSimpleName());
+        metricsService.recordProviderCall(provider, request.getModel(), "error");
+        log.error("LLM | Provider call failed | requestId={} | provider={}", reqId, provider, ex);
+        throw ex;
+      } finally {
+        observation.stop();
+      }
+
+      // ── 7b. Redact sensitive data from the response (before cache + caller) ──
+      if (sensitiveDataEnabled && redactResponse && response.getError() == null) {
+        redactResponseContent(provider, reqId, response);
+      }
+
+      // ── 7c. Optional output validation via the remote guardrails service ──
+      if (remoteGuardrailProperties.isEnabled()
+          && remoteGuardrailProperties.isValidateOutput()
+          && response.getError() == null) {
+        validateResponseContent(provider, reqId, response);
+      }
+
+      // ── 8. Store in cache on success ──────────────────────────────────
+      if (response.getError() == null) {
+        cacheService.put(provider, request, response);
+      }
+
+      // ── 9. Record gateway-level metrics ───────────────────────────────
+      metricsService.recordRequest(provider, false);
+      metricsService.recordLatency(provider, response.getLatencyMs());
+      metricsService.recordProviderCall(
+          provider, response.getModel(), response.getError() != null ? "error" : "success");
+      metricsService.recordTokenUsage(
+          provider,
+          response.getModel(),
+          response.getPromptTokens(),
+          response.getCompletionTokens(),
+          response.getTotalTokens());
+      if (response.getError() != null) {
+        metricsService.recordError(provider, "LLM_ERROR");
+      }
+
+      // ── 10. Fire-and-forget audit log ─────────────────────────────────
+      requestLogService.log(reqId, null, request, response).subscribe();
+
+      return response;
+
+    } finally {
+      MDC.remove("requestId");
+      MDC.remove("provider");
+      MDC.remove("sessionId");
+      MDC.remove("traceId");
+      MDC.remove("spanId");
+    }
+  }
+
+  /** Tries each provider in order, returning the first successful response. */
+  @Timed(
+      value = "llm.gateway.execution",
+      description = "End-to-end turnaround time of a single gateway LLM call",
+      histogram = true,
+      extraTags = {"operation", "failover"})
+  public LlmResponse executeWithFailover(List<String> providerChain, LlmRequest request) {
+    Exception lastException = null;
+    for (String provider : providerChain) {
+      try {
+        log.info("FAILOVER | Trying provider={} | chain={}", provider, providerChain);
+        LlmResponse response = execute(provider, request);
+        if (response.getError() == null) {
+          response.setProvider(provider + " (failover)");
+          return response;
         }
-        metricsService.recordError("failover", "ALL_PROVIDERS_EXHAUSTED");
-        String detail = lastException != null ? lastException.getMessage() : "all providers returned errors";
-        return errorResponse("failover", "All providers exhausted " + providerChain + ": " + detail);
+        log.warn(
+            "FAILOVER | Provider={} returned error={}, trying next", provider, response.getError());
+      } catch (Exception ex) {
+        log.warn(
+            "FAILOVER | Provider={} threw exception={}, trying next", provider, ex.getMessage());
+        lastException = ex;
+      }
+    }
+    metricsService.recordError("failover", "ALL_PROVIDERS_EXHAUSTED");
+    String detail =
+        lastException != null ? lastException.getMessage() : "all providers returned errors";
+    return errorResponse("failover", "All providers exhausted " + providerChain + ": " + detail);
+  }
+
+  /**
+   * Executes against the preferred provider; if the provider fails with an auth/config/connectivity
+   * error AND auto-failover is enabled, the gateway silently logs the failure and retries each
+   * provider in {@code llm.auto-failover.order} until one succeeds.
+   *
+   * <p>Handles two failure modes: - Thrown exception (provider SDK throws directly) - Soft error
+   * (service catches internally and returns LlmResponse.error)
+   *
+   * <p>Client prompt rejections (injection detected, topic blocked) are never failed-over — they
+   * always propagate back to the caller.
+   */
+  @Timed(
+      value = "llm.gateway.execution",
+      description = "End-to-end turnaround time of a single gateway LLM call",
+      histogram = true,
+      extraTags = {"operation", "auto-failover"})
+  public LlmResponse executeWithAutoFailover(String preferredProvider, LlmRequest request) {
+    LlmResponse primaryResponse = null;
+    boolean failoverNeeded = false;
+
+    try {
+      primaryResponse = execute(preferredProvider, request);
+
+      // Services catch exceptions internally and return them as LlmResponse.error.
+      // Detect auth/config errors in the soft-error field and trigger failover.
+      if (primaryResponse.getError() != null && isFailoverWorthy(primaryResponse.getError())) {
+        log.warn(
+            "AUTO_FAILOVER | provider={} returned auth/config error — trying alternatives | error={}",
+            preferredProvider,
+            primaryResponse.getError());
+        metricsService.recordError(preferredProvider, "AUTO_FAILOVER_TRIGGERED");
+        failoverNeeded = true;
+      }
+    } catch (Exception ex) {
+      if (!autoFailoverEnabled || !isFailoverWorthy(ex)) {
+        throw ex;
+      }
+      log.warn(
+          "AUTO_FAILOVER | provider={} threw {} — trying alternatives | reason={}",
+          preferredProvider,
+          ex.getClass().getSimpleName(),
+          rootMessage(ex));
+      metricsService.recordError(preferredProvider, "AUTO_FAILOVER_TRIGGERED");
+      failoverNeeded = true;
     }
 
-    /**
-     * Executes against the preferred provider; if the provider fails with an
-     * auth/config/connectivity error AND auto-failover is enabled, the gateway
-     * silently logs the failure and retries each provider in
-     * {@code llm.auto-failover.order} until one succeeds.
-     *
-     * Handles two failure modes:
-     *  - Thrown exception (provider SDK throws directly)
-     *  - Soft error (service catches internally and returns LlmResponse.error)
-     *
-     * Client prompt rejections (injection detected, topic blocked) are never
-     * failed-over — they always propagate back to the caller.
-     */
-    @Timed(value = "llm.gateway.execution",
-           description = "End-to-end turnaround time of a single gateway LLM call",
-           histogram = true,
-           extraTags = {"operation", "auto-failover"})
-    public LlmResponse executeWithAutoFailover(String preferredProvider, LlmRequest request) {
-        LlmResponse primaryResponse = null;
-        boolean failoverNeeded = false;
+    if (!autoFailoverEnabled || !failoverNeeded) {
+      return primaryResponse;
+    }
 
-        try {
-            primaryResponse = execute(preferredProvider, request);
+    // Try each provider in the configured failover order, skipping the failed one
+    List<String> order =
+        Arrays.stream(autoFailoverOrderRaw.split(","))
+            .map(String::trim)
+            .map(String::toLowerCase)
+            .toList();
 
-            // Services catch exceptions internally and return them as LlmResponse.error.
-            // Detect auth/config errors in the soft-error field and trigger failover.
-            if (primaryResponse.getError() != null && isFailoverWorthy(primaryResponse.getError())) {
-                log.warn("AUTO_FAILOVER | provider={} returned auth/config error — trying alternatives | error={}",
-                        preferredProvider, primaryResponse.getError());
-                metricsService.recordError(preferredProvider, "AUTO_FAILOVER_TRIGGERED");
-                failoverNeeded = true;
-            }
-        } catch (Exception ex) {
-            if (!autoFailoverEnabled || !isFailoverWorthy(ex)) {
-                throw ex;
-            }
-            log.warn("AUTO_FAILOVER | provider={} threw {} — trying alternatives | reason={}",
-                    preferredProvider, ex.getClass().getSimpleName(), rootMessage(ex));
-            metricsService.recordError(preferredProvider, "AUTO_FAILOVER_TRIGGERED");
-            failoverNeeded = true;
+    for (String candidate : order) {
+      if (candidate.equalsIgnoreCase(preferredProvider)) continue;
+      if (!providerRegistry.contains(candidate)) continue;
+
+      log.info(
+          "AUTO_FAILOVER | trying provider={} (timeout={}s)", candidate, providerTimeoutSeconds);
+      try {
+        LlmResponse candidateResponse =
+            CompletableFuture.supplyAsync(() -> execute(candidate, request))
+                .get(providerTimeoutSeconds, TimeUnit.SECONDS);
+
+        if (candidateResponse == null) continue;
+
+        if (candidateResponse.getError() == null) {
+          log.info("AUTO_FAILOVER | succeeded with provider={}", candidate);
+          candidateResponse.setProvider(
+              candidateResponse.getProvider() + " [auto-failover from " + preferredProvider + "]");
+          return candidateResponse;
         }
 
-        if (!autoFailoverEnabled || !failoverNeeded) {
-            return primaryResponse;
+        if (isFailoverWorthy(candidateResponse.getError())) {
+          log.warn(
+              "AUTO_FAILOVER | provider={} failed, continuing | error={}",
+              candidate,
+              candidateResponse.getError());
+          continue;
         }
 
-        // Try each provider in the configured failover order, skipping the failed one
-        List<String> order = Arrays.stream(autoFailoverOrderRaw.split(","))
-                .map(String::trim).map(String::toLowerCase).toList();
+        // Provider returned a non-retryable error (e.g. prompt too long)
+        return candidateResponse;
 
-        for (String candidate : order) {
-            if (candidate.equalsIgnoreCase(preferredProvider)) continue;
-            if (!providerRegistry.contains(candidate)) continue;
-
-            log.info("AUTO_FAILOVER | trying provider={} (timeout={}s)", candidate, providerTimeoutSeconds);
-            try {
-                LlmResponse candidateResponse = CompletableFuture
-                        .supplyAsync(() -> execute(candidate, request))
-                        .get(providerTimeoutSeconds, TimeUnit.SECONDS);
-
-                if (candidateResponse == null) continue;
-
-                if (candidateResponse.getError() == null) {
-                    log.info("AUTO_FAILOVER | succeeded with provider={}", candidate);
-                    candidateResponse.setProvider(candidateResponse.getProvider()
-                            + " [auto-failover from " + preferredProvider + "]");
-                    return candidateResponse;
-                }
-
-                if (isFailoverWorthy(candidateResponse.getError())) {
-                    log.warn("AUTO_FAILOVER | provider={} failed, continuing | error={}",
-                            candidate, candidateResponse.getError());
-                    continue;
-                }
-
-                // Provider returned a non-retryable error (e.g. prompt too long)
-                return candidateResponse;
-
-            } catch (TimeoutException ex) {
-                log.warn("AUTO_FAILOVER | provider={} timed out after {}s, skipping", candidate, providerTimeoutSeconds);
-                metricsService.recordError(candidate, "FAILOVER_TIMEOUT");
-            } catch (ExecutionException ex) {
-                Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-                if (isFailoverWorthy(cause)) {
-                    log.warn("AUTO_FAILOVER | provider={} failed: {}", candidate, cause.getMessage());
-                } else {
-                    throw cause instanceof RuntimeException re ? re : new RuntimeException(cause);
-                }
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException("Auto-failover interrupted", ex);
-            }
+      } catch (TimeoutException ex) {
+        log.warn(
+            "AUTO_FAILOVER | provider={} timed out after {}s, skipping",
+            candidate,
+            providerTimeoutSeconds);
+        metricsService.recordError(candidate, "FAILOVER_TIMEOUT");
+      } catch (ExecutionException ex) {
+        Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+        if (isFailoverWorthy(cause)) {
+          log.warn("AUTO_FAILOVER | provider={} failed: {}", candidate, cause.getMessage());
+        } else {
+          throw cause instanceof RuntimeException re ? re : new RuntimeException(cause);
         }
-
-        metricsService.recordError("auto-failover", "ALL_PROVIDERS_EXHAUSTED");
-        return errorResponse(preferredProvider,
-                "All providers exhausted during auto-failover. Check API key configurations.");
+      } catch (InterruptedException ex) {
+        Thread.currentThread().interrupt();
+        throw new RuntimeException("Auto-failover interrupted", ex);
+      }
     }
 
-    /**
-     * True when a thrown exception should trigger failover to the next provider.
-     *
-     * Strategy: failover on ANY provider-side error (HTTP 4xx/5xx, connection
-     * problems, SDK exceptions). Only client-side prompt rejections stop the chain
-     * — those will fail identically on every provider.
-     */
-    private boolean isFailoverWorthy(Throwable ex) {
-        // Client errors — the same prompt will be rejected everywhere, don't failover
-        if (ex instanceof PromptValidationException)        return false;
-        if (ex instanceof InvalidRequestException)           return false;
-        if (ex instanceof LLMProviderNotSupportedException)  return false;
+    metricsService.recordError("auto-failover", "ALL_PROVIDERS_EXHAUSTED");
+    return errorResponse(
+        preferredProvider,
+        "All providers exhausted during auto-failover. Check API key configurations.");
+  }
 
-        // Every other exception is a provider-side problem → try the next one
-        return true;
+  /**
+   * True when a thrown exception should trigger failover to the next provider.
+   *
+   * <p>Strategy: failover on ANY provider-side error (HTTP 4xx/5xx, connection problems, SDK
+   * exceptions). Only client-side prompt rejections stop the chain — those will fail identically on
+   * every provider.
+   */
+  private boolean isFailoverWorthy(Throwable ex) {
+    // Client errors — the same prompt will be rejected everywhere, don't failover
+    if (ex instanceof PromptValidationException) return false;
+    if (ex instanceof InvalidRequestException) return false;
+    if (ex instanceof LLMProviderNotSupportedException) return false;
+
+    // Every other exception is a provider-side problem → try the next one
+    return true;
+  }
+
+  /**
+   * True when a soft-error string (LlmResponse.error) should trigger failover.
+   *
+   * <p>Prompt-rejection messages come from our own guardrail advisors and include specific
+   * keywords. Everything else is a provider-side failure.
+   */
+  private boolean isFailoverWorthy(String errorMsg) {
+    if (errorMsg == null || errorMsg.isBlank()) return false;
+    String msg = errorMsg.toLowerCase();
+    // These originate from our guardrail chain — the prompt is the problem, not the provider
+    if (msg.contains("prompt validation")
+        || msg.contains("injection detected")
+        || msg.contains("toxic content")
+        || msg.contains("restricted topic")
+        || msg.contains("harmful")) {
+      return false;
     }
+    // Any other error from a provider → failover
+    return true;
+  }
 
-    /**
-     * True when a soft-error string (LlmResponse.error) should trigger failover.
-     *
-     * Prompt-rejection messages come from our own guardrail advisors and include
-     * specific keywords. Everything else is a provider-side failure.
-     */
-    private boolean isFailoverWorthy(String errorMsg) {
-        if (errorMsg == null || errorMsg.isBlank()) return false;
-        String msg = errorMsg.toLowerCase();
-        // These originate from our guardrail chain — the prompt is the problem, not the provider
-        if (msg.contains("prompt validation")
-                || msg.contains("injection detected")
-                || msg.contains("toxic content")
-                || msg.contains("restricted topic")
-                || msg.contains("harmful")) {
-            return false;
-        }
-        // Any other error from a provider → failover
-        return true;
+  private static String rootMessage(Exception ex) {
+    Throwable cause = ex;
+    while (cause.getCause() != null) cause = cause.getCause();
+    return cause.getMessage() != null
+        ? cause.getMessage()
+        : ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+  }
+
+  /**
+   * Structured-output extraction via OpenAI's BeanOutputConverter. Runs inside an Observation span
+   * for full tracing coverage.
+   */
+  public StructuredLlmResponse executeStructured(LlmRequest request) {
+    if (openAiService == null) {
+      throw new IllegalStateException(
+          "OpenAI provider is not available for structured output extraction");
     }
-
-    private static String rootMessage(Exception ex) {
-        Throwable cause = ex;
-        while (cause.getCause() != null) cause = cause.getCause();
-        return cause.getMessage() != null ? cause.getMessage()
-                : ex.getMessage() != null ? ex.getMessage()
-                : ex.getClass().getSimpleName();
+    String reqId =
+        request.getCorrelationId() != null
+            ? request.getCorrelationId()
+            : UUID.randomUUID().toString();
+    MDC.put("requestId", reqId);
+    try {
+      Observation obs =
+          Observation.createNotStarted("llm.structured", observationRegistry)
+              .contextualName("LLM structured extraction")
+              .lowCardinalityKeyValue("provider", "openai")
+              .start();
+      try {
+        return openAiService.extractStructured(request, StructuredLlmResponse.class);
+      } catch (Exception ex) {
+        obs.error(ex);
+        throw ex;
+      } finally {
+        obs.stop();
+      }
+    } finally {
+      MDC.remove("requestId");
     }
+  }
 
-    /**
-     * Structured-output extraction via OpenAI's BeanOutputConverter.
-     * Runs inside an Observation span for full tracing coverage.
-     */
-    public StructuredLlmResponse executeStructured(LlmRequest request) {
-        if (openAiService == null) {
-            throw new IllegalStateException("OpenAI provider is not available for structured output extraction");
-        }
-        String reqId = request.getCorrelationId() != null
-                ? request.getCorrelationId() : UUID.randomUUID().toString();
-        MDC.put("requestId", reqId);
-        try {
-            Observation obs = Observation.createNotStarted("llm.structured", observationRegistry)
-                    .contextualName("LLM structured extraction")
-                    .lowCardinalityKeyValue("provider", "openai")
-                    .start();
-            try {
-                return openAiService.extractStructured(request, StructuredLlmResponse.class);
-            } catch (Exception ex) {
-                obs.error(ex);
-                throw ex;
-            } finally {
-                obs.stop();
-            }
-        } finally {
-            MDC.remove("requestId");
-        }
+  public LlmResponse circuitBreakerFallback(String providerName, LlmRequest request, Throwable ex) {
+    log.warn("CIRCUIT_OPEN | Provider={} | {}", providerName, ex.getMessage());
+    metricsService.recordError(providerName, "CIRCUIT_OPEN");
+    return errorResponse(
+        providerName, "Provider temporarily unavailable (circuit open). Please retry later.");
+  }
+
+  public LlmResponse retryFallback(String providerName, LlmRequest request, Throwable ex) {
+    log.error("RETRY_EXHAUSTED | Provider={} | {}", providerName, ex.getMessage());
+    metricsService.recordError(providerName, "RETRY_EXHAUSTED");
+    return errorResponse(
+        providerName, "Provider failed after multiple retries: " + ex.getMessage());
+  }
+
+  public Set<String> getRegisteredProviders() {
+    return providerRegistry.names();
+  }
+
+  /**
+   * Redacts any PII/secret that leaked into the model's response before it is cached or returned to
+   * the caller. Mutates the {@code content} and {@code response} fields.
+   */
+  private void redactResponseContent(String provider, String reqId, LlmResponse response) {
+    SensitiveDataRedactor.Result result = sensitiveDataRedactor.redact(response.getContent());
+    if (result.redacted()) {
+      response.setContent(result.text());
+      metricsService.recordSensitiveDataRedaction(provider, "outbound", result.types());
+      log.warn(
+          "SECURITY | Sensitive data redacted from response | requestId={} | provider={} | types={}",
+          reqId,
+          provider,
+          result.types());
     }
+  }
 
-    public LlmResponse circuitBreakerFallback(String providerName, LlmRequest request, Throwable ex) {
-        log.warn("CIRCUIT_OPEN | Provider={} | {}", providerName, ex.getMessage());
-        metricsService.recordError(providerName, "CIRCUIT_OPEN");
-        return errorResponse(providerName, "Provider temporarily unavailable (circuit open). Please retry later.");
+  /**
+   * Sends the model's answer through the remote guardrails service ("output" stage). A blocked
+   * answer is never returned (or cached) — the content is replaced with a structured error so the
+   * caller knows the response was withheld, not lost.
+   */
+  private void validateResponseContent(String provider, String reqId, LlmResponse response) {
+    String content = response.getContent();
+    if (content == null || content.isBlank()) return;
+
+    GuardrailValidationResult result = remoteGuardrailClient.validate(content, "output");
+    if (!result.passed()) {
+      metricsService.recordRejectedRequest(provider, "EXTERNAL_GUARDRAIL_OUTPUT");
+      log.warn(
+          "GUARDRAIL | response blocked by guardrails service | requestId={} | provider={} | violations={}",
+          reqId,
+          provider,
+          result.violations());
+      response.setContent(null);
+      response.setError("Response blocked by guardrails: " + result.violations());
+    } else if (result.sanitizedText() != null) {
+      response.setContent(result.sanitizedText());
     }
+  }
 
-    public LlmResponse retryFallback(String providerName, LlmRequest request, Throwable ex) {
-        log.error("RETRY_EXHAUSTED | Provider={} | {}", providerName, ex.getMessage());
-        metricsService.recordError(providerName, "RETRY_EXHAUSTED");
-        return errorResponse(providerName, "Provider failed after multiple retries: " + ex.getMessage());
-    }
-
-    public Set<String> getRegisteredProviders() {
-        return providerRegistry.names();
-    }
-
-    /**
-     * Redacts any PII/secret that leaked into the model's response before it is cached
-     * or returned to the caller. Mutates the {@code content} and {@code response} fields.
-     */
-    private void redactResponseContent(String provider, String reqId, LlmResponse response) {
-        SensitiveDataRedactor.Result result = sensitiveDataRedactor.redact(response.getContent());
-        if (result.redacted()) {
-            response.setContent(result.text());
-            metricsService.recordSensitiveDataRedaction(provider, "outbound", result.types());
-            log.warn("SECURITY | Sensitive data redacted from response | requestId={} | provider={} | types={}",
-                    reqId, provider, result.types());
-        }
-    }
-
-    /**
-     * Sends the model's answer through the remote guardrails service ("output" stage).
-     * A blocked answer is never returned (or cached) — the content is replaced with a
-     * structured error so the caller knows the response was withheld, not lost.
-     */
-    private void validateResponseContent(String provider, String reqId, LlmResponse response) {
-        String content = response.getContent();
-        if (content == null || content.isBlank()) return;
-
-        GuardrailValidationResult result = remoteGuardrailClient.validate(content, "output");
-        if (!result.passed()) {
-            metricsService.recordRejectedRequest(provider, "EXTERNAL_GUARDRAIL_OUTPUT");
-            log.warn("GUARDRAIL | response blocked by guardrails service | requestId={} | provider={} | violations={}",
-                    reqId, provider, result.violations());
-            response.setContent(null);
-            response.setError("Response blocked by guardrails: " + result.violations());
-        } else if (result.sanitizedText() != null) {
-            response.setContent(result.sanitizedText());
-        }
-    }
-
-    private LlmResponse errorResponse(String provider, String message) {
-        return LlmResponse.builder()
-                .provider(provider)
-                .error(message)
-                .timestamp(System.currentTimeMillis())
-                .build();
-    }
+  private LlmResponse errorResponse(String provider, String message) {
+    return LlmResponse.builder()
+        .provider(provider)
+        .error(message)
+        .timestamp(System.currentTimeMillis())
+        .build();
+  }
 }

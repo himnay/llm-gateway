@@ -3,10 +3,10 @@ global:
   evaluation_interval: 15s
 
 # NOTE: docker-compose.yml mounts observability/prometheus.yml (this file is a spare copy).
-# The scrape path must include the /llm base-path (spring.webflux.base-path=/llm).
+# The scrape path must include the /llm/v1 base-path (spring.webflux.base-path=/llm/v1).
 scrape_configs:
   - job_name: llm-gateway
     static_configs:
       - targets: ["host.docker.internal:8080"]
-    metrics_path: /llm/actuator/prometheus
+    metrics_path: /llm/v1/actuator/prometheus
     scrape_interval: 10s

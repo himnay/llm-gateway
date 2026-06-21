@@ -4,7 +4,7 @@ This guide explains how metrics flow from the LLM Gateway into Prometheus and ho
 visualise them in Grafana, including the importable dashboard shipped in this repo.
 
 ```
-┌────────────┐   scrape /llm/actuator/prometheus   ┌────────────┐   PromQL    ┌──────────┐
+┌────────────┐   scrape /llm/v1/actuator/prometheus   ┌────────────┐   PromQL    ┌──────────┐
 │ LLM Gateway│ ──────────────────────────────────► │ Prometheus │ ──────────► │ Grafana  │
 │  :8080     │        every 10s                    │   :9090    │             │  :3000   │
 └────────────┘                                     └────────────┘             └──────────┘
@@ -20,20 +20,20 @@ The gateway uses **Spring Boot Actuator + Micrometer** with the Prometheus regis
 
 | Endpoint                         | Purpose                                              |
 |----------------------------------|------------------------------------------------------|
-| `/llm/actuator/health`           | Liveness/readiness + component health (redis, r2dbc) |
-| `/llm/actuator/metrics`          | Browse individual metrics (JSON)                     |
-| `/llm/actuator/prometheus`       | **Prometheus scrape endpoint** (text exposition)     |
-| `/llm/actuator/circuitbreakers`  | Resilience4j circuit-breaker state                   |
+| `/llm/v1/actuator/health`           | Liveness/readiness + component health (redis, r2dbc) |
+| `/llm/v1/actuator/metrics`          | Browse individual metrics (JSON)                     |
+| `/llm/v1/actuator/prometheus`       | **Prometheus scrape endpoint** (text exposition)     |
+| `/llm/v1/actuator/circuitbreakers`  | Resilience4j circuit-breaker state                   |
 
-> **Important — the `/llm` prefix.** The app sets `spring.webflux.base-path: /llm`,
-> so the actuator endpoints live under `/llm/actuator/...`, **not** `/actuator/...`.
-> Prometheus must scrape `/llm/actuator/prometheus` (already configured in
+> **Important — the `/llm/v1` prefix.** The app sets `spring.webflux.base-path: /llm/v1`,
+> so the actuator endpoints live under `/llm/v1/actuator/...`, **not** `/actuator/...`.
+> Prometheus must scrape `/llm/v1/actuator/prometheus` (already configured in
 > `observability/prometheus.yml`).
 
 Quick check once the app is running:
 
 ```bash
-curl -s http://localhost:8080/llm/actuator/prometheus | grep llm_provider_calls_total
+curl -s http://localhost:8080/llm/v1/actuator/prometheus | grep llm_provider_calls_total
 ```
 
 ### Histogram buckets (latency percentiles)
@@ -114,7 +114,7 @@ Config: `observability/prometheus.yml`
 ```yaml
 scrape_configs:
   - job_name: 'llm-gateway'
-    metrics_path: /llm/actuator/prometheus
+    metrics_path: /llm/v1/actuator/prometheus
     static_configs:
       - targets: ['host.docker.internal:8080']
     scrape_interval: 10s
@@ -179,9 +179,9 @@ Use the **Provider** and **Application** template variables at the top to filter
 
 | Symptom | Cause / Fix |
 |---------|-------------|
-| Prometheus target DOWN | Wrong path — must be `/llm/actuator/prometheus`. Confirm the app is on `:8080`. |
+| Prometheus target DOWN | Wrong path — must be `/llm/v1/actuator/prometheus`. Confirm the app is on `:8080`. |
 | Target DOWN on Linux | `host.docker.internal` not resolvable — add `extra_hosts: ["host.docker.internal:host-gateway"]` to the prometheus service. |
-| No `llm_*` metrics | They register lazily on first use — send a request to `POST /llm/query` first. |
+| No `llm_*` metrics | They register lazily on first use — send a request to `POST /llm/v1/query` first. |
 | p95 panels empty | Histogram buckets need `percentiles-histogram` (already set) **and** at least one request to populate buckets. |
 | Dashboard shows “No data” | Check the **Application** variable equals `llm-gateway` and the time range covers recent traffic. |
 | Grafana dashboard missing | Ensure `./observability/grafana/dashboards` is mounted to `/etc/dashboards` (see `docker-compose.yml`). |
