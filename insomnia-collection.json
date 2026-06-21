@@ -24,8 +24,8 @@
       "created": 1748736000000,
       "name": "Local Dev",
       "data": {
-        "base_url":        "http://localhost:8080/llm",
-        "api_key":         "llm-gateway-dev-key-2026",
+        "base_url":        "http://localhost:8080/llm/v1",
+        "access_token":    "PASTE_A_KEYCLOAK_JWT_HERE",
         "session_id":      "test-session-001",
         "openai_model":    "gpt-4o",
         "anthropic_model": "claude-3-5-sonnet-20241022",
@@ -48,8 +48,8 @@
       "created": 1748736000000,
       "name": "Production",
       "data": {
-        "base_url": "https://your-gateway.example.com/llm",
-        "api_key":  "YOUR_PRODUCTION_API_KEY"
+        "base_url": "https://your-gateway.example.com/llm/v1",
+        "access_token": "YOUR_PRODUCTION_KEYCLOAK_JWT"
       },
       "dataPropertyOrder": null,
       "color": "#dc2626",
@@ -191,7 +191,7 @@
       "body": {},
       "parameters": [],
       "headers": [
-        { "id": "hdr_h1a", "name": "X-API-Key", "value": "{{ _.api_key }}", "disabled": false }
+        { "id": "hdr_h1a", "name": "Authorization", "value": "Bearer {{ _.access_token }}", "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736001001,
@@ -216,7 +216,7 @@
       "body": {},
       "parameters": [],
       "headers": [
-        { "id": "hdr_h2a", "name": "X-API-Key", "value": "{{ _.api_key }}", "disabled": false }
+        { "id": "hdr_h2a", "name": "Authorization", "value": "Bearer {{ _.access_token }}", "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736001002,
@@ -241,7 +241,7 @@
       "body": {},
       "parameters": [],
       "headers": [
-        { "id": "hdr_h3a", "name": "X-API-Key", "value": "{{ _.api_key }}", "disabled": false }
+        { "id": "hdr_h3a", "name": "Authorization", "value": "Bearer {{ _.access_token }}", "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736001003,
@@ -271,7 +271,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_oa1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_oa2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false },
+        { "id": "hdr_oa2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false },
         { "id": "hdr_oa3", "name": "X-Request-ID", "value": "openai-query-001",  "disabled": false }
       ],
       "authentication": {},
@@ -301,7 +301,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_ob1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_ob2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_ob2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736002002,
@@ -331,7 +331,7 @@
       "headers": [
         { "id": "hdr_oc1", "name": "Content-Type", "value": "application/json",  "disabled": false },
         { "id": "hdr_oc2", "name": "Accept",        "value": "text/event-stream", "disabled": false },
-        { "id": "hdr_oc3", "name": "X-API-Key",     "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_oc3", "name": "Authorization",     "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736002003,
@@ -360,7 +360,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_od1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_od2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_od2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736002004,
@@ -389,7 +389,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_oe1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_oe2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_oe2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736002005,
@@ -418,7 +418,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_of1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_of2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_of2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736002006,
@@ -448,7 +448,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_aa1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_aa2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_aa2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736003001,
@@ -477,7 +477,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_ab1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_ab2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_ab2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736003002,
@@ -506,7 +506,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_ac1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_ac2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_ac2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736003003,
@@ -536,7 +536,7 @@
       "headers": [
         { "id": "hdr_ad1", "name": "Content-Type", "value": "application/json",  "disabled": false },
         { "id": "hdr_ad2", "name": "Accept",        "value": "text/event-stream", "disabled": false },
-        { "id": "hdr_ad3", "name": "X-API-Key",     "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_ad3", "name": "Authorization",     "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736003004,
@@ -566,7 +566,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_la1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_la2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_la2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736004001,
@@ -595,7 +595,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_lb1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_lb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_lb2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736004002,
@@ -625,7 +625,7 @@
       "headers": [
         { "id": "hdr_lc1", "name": "Content-Type", "value": "application/json",  "disabled": false },
         { "id": "hdr_lc2", "name": "Accept",        "value": "text/event-stream", "disabled": false },
-        { "id": "hdr_lc3", "name": "X-API-Key",     "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_lc3", "name": "Authorization",     "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736004003,
@@ -655,7 +655,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_ga1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_ga2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_ga2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736005001,
@@ -684,7 +684,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_gb1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_gb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_gb2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736005002,
@@ -713,7 +713,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_gc1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_gc2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_gc2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736005003,
@@ -743,7 +743,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_ca1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_ca2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_ca2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736006001,
@@ -772,7 +772,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_cb1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_cb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_cb2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736006002,
@@ -802,7 +802,7 @@
       "headers": [
         { "id": "hdr_cc1", "name": "Content-Type", "value": "application/json",  "disabled": false },
         { "id": "hdr_cc2", "name": "Accept",        "value": "text/event-stream", "disabled": false },
-        { "id": "hdr_cc3", "name": "X-API-Key",     "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_cc3", "name": "Authorization",     "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736006003,
@@ -832,7 +832,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_ha1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_ha2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_ha2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736007001,
@@ -861,7 +861,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_hb1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_hb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_hb2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736007002,
@@ -891,7 +891,7 @@
       "headers": [
         { "id": "hdr_hc1", "name": "Content-Type", "value": "application/json",  "disabled": false },
         { "id": "hdr_hc2", "name": "Accept",        "value": "text/event-stream", "disabled": false },
-        { "id": "hdr_hc3", "name": "X-API-Key",     "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_hc3", "name": "Authorization",     "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736007003,
@@ -921,7 +921,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_fa1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_fa2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_fa2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736008001,
@@ -950,7 +950,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_fb1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_fb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_fb2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736008002,
@@ -979,7 +979,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_fc1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_fc2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_fc2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736008003,
@@ -1009,7 +1009,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_ta1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_ta2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_ta2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736009001,
@@ -1038,7 +1038,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_tb1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_tb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_tb2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736009002,
@@ -1068,7 +1068,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_sa1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_sa2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_sa2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736010001,
@@ -1097,7 +1097,7 @@
       "parameters": [],
       "headers": [
         { "id": "hdr_sb1", "name": "Content-Type", "value": "application/json", "disabled": false },
-        { "id": "hdr_sb2", "name": "X-API-Key",    "value": "{{ _.api_key }}",   "disabled": false }
+        { "id": "hdr_sb2", "name": "Authorization",    "value": "Bearer {{ _.access_token }}",   "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736010002,
@@ -1122,7 +1122,7 @@
       "body": {},
       "parameters": [],
       "headers": [
-        { "id": "hdr_sc1", "name": "X-API-Key", "value": "{{ _.api_key }}", "disabled": false }
+        { "id": "hdr_sc1", "name": "Authorization", "value": "Bearer {{ _.access_token }}", "disabled": false }
       ],
       "authentication": {},
       "metaSortKey": -1748736010003,

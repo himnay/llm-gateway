@@ -1,6 +1,5 @@
 package com.llm.gateway.llm_gateway.config;
 
-import com.llm.gateway.llm_gateway.admin.AdminHandler;
 import com.llm.gateway.llm_gateway.dto.ImageGenerationRequest;
 import com.llm.gateway.llm_gateway.dto.ImageGenerationResponse;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
@@ -250,67 +249,6 @@ public class LlmRouterConfig {
                       required = true,
                       description =
                           "Conversation/session id whose Redis-stored history will be cleared")
-                })),
-    @RouterOperation(
-        path = "/admin/keys",
-        method = RequestMethod.GET,
-        beanClass = AdminHandler.class,
-        beanMethod = "listKeys",
-        operation =
-            @Operation(
-                operationId = "listKeys",
-                tags = "Admin",
-                summary = "List API keys",
-                description =
-                    "Lists all API keys (names, status, timestamps) — requires auth. Never returns key hashes or raw keys.")),
-    @RouterOperation(
-        path = "/admin/keys",
-        method = RequestMethod.POST,
-        beanClass = AdminHandler.class,
-        beanMethod = "createKey",
-        operation =
-            @Operation(
-                operationId = "createKey",
-                tags = "Admin",
-                summary = "Create an API key",
-                description =
-                    "Creates a new API key and returns the raw key exactly once — it is never stored or shown again.")),
-    @RouterOperation(
-        path = "/admin/keys/{id}",
-        method = RequestMethod.PATCH,
-        beanClass = AdminHandler.class,
-        beanMethod = "updateKey",
-        operation =
-            @Operation(
-                operationId = "updateKey",
-                tags = "Admin",
-                summary = "Enable/disable or set expiry on an API key",
-                description =
-                    "Updates the enabled flag and/or expiry timestamp of an existing API key.",
-                parameters = {
-                  @Parameter(
-                      name = "id",
-                      in = ParameterIn.PATH,
-                      required = true,
-                      description = "Numeric API key id")
-                })),
-    @RouterOperation(
-        path = "/admin/keys/{id}",
-        method = RequestMethod.DELETE,
-        beanClass = AdminHandler.class,
-        beanMethod = "deleteKey",
-        operation =
-            @Operation(
-                operationId = "deleteKey",
-                tags = "Admin",
-                summary = "Permanently delete an API key",
-                description = "Permanently deletes an API key by id.",
-                parameters = {
-                  @Parameter(
-                      name = "id",
-                      in = ParameterIn.PATH,
-                      required = true,
-                      description = "Numeric API key id")
                 }))
   })
   @Bean
@@ -318,8 +256,7 @@ public class LlmRouterConfig {
       LlmHandler handler,
       LlmStreamHandler streamHandler,
       ImageHandler imageHandler,
-      EmbeddingHandler embeddingHandler,
-      AdminHandler adminHandler) {
+      EmbeddingHandler embeddingHandler) {
     return RouterFunctions.route()
         // ── Public info ───────────────────────────────────────────────
         .GET("/health", handler::health)
@@ -336,11 +273,6 @@ public class LlmRouterConfig {
         .POST("/{provider}/stream", streamHandler::stream)
         // ── Session management ────────────────────────────────────────
         .DELETE("/sessions/{sessionId}", handler::deleteSession)
-        // ── Admin — API key management (requires auth) ────────────────
-        .GET("/admin/keys", adminHandler::listKeys)
-        .POST("/admin/keys", adminHandler::createKey)
-        .PATCH("/admin/keys/{id}", adminHandler::updateKey)
-        .DELETE("/admin/keys/{id}", adminHandler::deleteKey)
         .build();
   }
 }

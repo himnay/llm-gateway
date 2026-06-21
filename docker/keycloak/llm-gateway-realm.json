@@ -1,0 +1,155 @@
+{
+  "realm": "llm-gateway",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 900,
+  "roles": {
+    "realm": [
+      { "name": "gateway-user", "description": "Can call LLM Gateway inference endpoints" },
+      { "name": "gateway-admin", "description": "Elevated gateway role, reserved for future admin-only endpoints" }
+    ]
+  },
+  "requiredActions": [
+    { "alias": "CONFIGURE_TOTP", "name": "Configure OTP", "providerId": "CONFIGURE_TOTP", "enabled": true, "defaultAction": false, "priority": 10 },
+    { "alias": "TERMS_AND_CONDITIONS", "name": "Terms and Conditions", "providerId": "TERMS_AND_CONDITIONS", "enabled": false, "defaultAction": false, "priority": 20 },
+    { "alias": "UPDATE_PASSWORD", "name": "Update Password", "providerId": "UPDATE_PASSWORD", "enabled": true, "defaultAction": false, "priority": 30 },
+    { "alias": "UPDATE_PROFILE", "name": "Update Profile", "providerId": "UPDATE_PROFILE", "enabled": true, "defaultAction": false, "priority": 40 },
+    { "alias": "VERIFY_EMAIL", "name": "Verify Email", "providerId": "VERIFY_EMAIL", "enabled": true, "defaultAction": false, "priority": 50 },
+    { "alias": "update_user_locale", "name": "Update User Locale", "providerId": "update_user_locale", "enabled": true, "defaultAction": false, "priority": 1000 }
+  ],
+  "clients": [
+    {
+      "clientId": "llm-gateway-client",
+      "name": "LLM Gateway (machine-to-machine)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "llm-gateway-dev-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
+    },
+    {
+      "clientId": "llm-chat-agent-client",
+      "name": "LLM Chat Agent (machine-to-machine)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "llm-chat-agent-dev-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
+    },
+    {
+      "clientId": "llm-audio-client",
+      "name": "LLM Audio (machine-to-machine)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "llm-audio-dev-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
+    },
+    {
+      "clientId": "llm-image-client",
+      "name": "LLM Image (machine-to-machine)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "llm-image-dev-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
+    },
+    {
+      "clientId": "llm-rag-pipeline-client",
+      "name": "LLM RAG Pipeline (machine-to-machine)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "llm-rag-pipeline-dev-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
+    },
+    {
+      "clientId": "llm-rag-graph-client",
+      "name": "LLM RAG Graph (machine-to-machine)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "llm-rag-graph-dev-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-llm-gateway-client",
+      "enabled": true,
+      "serviceAccountClientId": "llm-gateway-client",
+      "realmRoles": ["gateway-admin"]
+    },
+    {
+      "username": "service-account-llm-chat-agent-client",
+      "enabled": true,
+      "serviceAccountClientId": "llm-chat-agent-client",
+      "realmRoles": ["gateway-user"]
+    },
+    {
+      "username": "service-account-llm-audio-client",
+      "enabled": true,
+      "serviceAccountClientId": "llm-audio-client",
+      "realmRoles": ["gateway-user"]
+    },
+    {
+      "username": "service-account-llm-image-client",
+      "enabled": true,
+      "serviceAccountClientId": "llm-image-client",
+      "realmRoles": ["gateway-user"]
+    },
+    {
+      "username": "service-account-llm-rag-pipeline-client",
+      "enabled": true,
+      "serviceAccountClientId": "llm-rag-pipeline-client",
+      "realmRoles": ["gateway-user"]
+    },
+    {
+      "username": "service-account-llm-rag-graph-client",
+      "enabled": true,
+      "serviceAccountClientId": "llm-rag-graph-client",
+      "realmRoles": ["gateway-user"]
+    },
+    {
+      "username": "dev-user",
+      "enabled": true,
+      "email": "dev-user@llm-gateway.local",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "devpassword", "temporary": false }
+      ],
+      "realmRoles": ["gateway-user"]
+    }
+  ]
+}

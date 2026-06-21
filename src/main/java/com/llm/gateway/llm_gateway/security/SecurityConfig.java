@@ -1,36 +1,40 @@
 package com.llm.gateway.llm_gateway.security;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpStatus;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.ReactiveAuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
-import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
-import org.springframework.security.web.server.authentication.AuthenticationWebFilter;
-import org.springframework.security.web.server.authentication.HttpStatusServerEntryPoint;
-import org.springframework.security.web.server.authentication.ServerAuthenticationEntryPointFailureHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import reactor.core.publisher.Mono;
 
+/**
+ * Authenticates every request as a Keycloak-issued OAuth2 JWT Bearer token (resource-server mode) —
+ * Spring Boot auto-configures the {@code ReactiveJwtDecoder} from {@code
+ * spring.security.oauth2.resourceserver.jwt.issuer-uri}. Keycloak puts realm roles under the {@code
+ * realm_access.roles} claim rather than the standard {@code scope}/{@code scp} claim that {@link
+ * JwtAuthenticationConverter} reads by default, so {@link #keycloakAuthoritiesConverter()} maps
+ * that claim onto {@code ROLE_*} authorities instead.
+ */
 @Slf4j
 @Configuration
 @EnableWebFluxSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
-
-  private final ApiKeyService apiKeyService;
 
   @Value("${gateway.auth.enabled:true}")
   private boolean authEnabled;
@@ -48,15 +52,15 @@ public class SecurityConfig {
 
     if (!authEnabled) {
       log.warn(
-          "SECURITY | API key authentication is DISABLED — set GATEWAY_AUTH_ENABLED=true in production");
+          "SECURITY | OAuth2 authentication is DISABLED — set GATEWAY_AUTH_ENABLED=true in production");
       return http.authorizeExchange(a -> a.anyExchange().permitAll()).build();
     }
 
-    log.info("SECURITY | API key authentication is ENABLED");
+    log.info("SECURITY | OAuth2 (Keycloak) JWT authentication is ENABLED");
 
-    AuthenticationWebFilter apiKeyFilter = buildApiKeyFilter();
-
-    return http.addFilterAt(apiKeyFilter, SecurityWebFiltersOrder.AUTHENTICATION)
+    return http.oauth2ResourceServer(
+            oauth2 ->
+                oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(reactiveKeycloakJwtConverter())))
         .authorizeExchange(
             a ->
                 a
@@ -70,7 +74,7 @@ public class SecurityConfig {
                     .pathMatchers(
                         "/llm/v1/swagger-ui.html", "/llm/v1/swagger-ui/**", "/llm/v1/api-docs/**")
                     .permitAll()
-                    // Everything else requires a valid API key
+                    // Everything else requires a valid Keycloak-issued Bearer token
                     .anyExchange()
                     .authenticated())
         .build();
@@ -98,42 +102,25 @@ public class SecurityConfig {
     return source;
   }
 
-  private AuthenticationWebFilter buildApiKeyFilter() {
-    ReactiveAuthenticationManager authManager =
-        token -> {
-          String rawKey = (String) token.getCredentials();
-          return apiKeyService
-              .isValid(rawKey)
-              .flatMap(
-                  valid -> {
-                    if (!valid) {
-                      log.warn("SECURITY | rejected invalid API key");
-                      return Mono.error(new BadCredentialsException("Invalid or expired API key"));
-                    }
-                    // Fire-and-forget last_used stamp
-                    apiKeyService.touchLastUsed(rawKey).subscribe();
-                    return Mono.just(
-                        (org.springframework.security.core.Authentication)
-                            new UsernamePasswordAuthenticationToken(
-                                "api-client",
-                                rawKey,
-                                List.of(new SimpleGrantedAuthority("ROLE_API_CLIENT"))));
-                  });
-        };
+  private Converter<Jwt, Mono<AbstractAuthenticationToken>> reactiveKeycloakJwtConverter() {
+    JwtAuthenticationConverter delegate = new JwtAuthenticationConverter();
+    delegate.setJwtGrantedAuthoritiesConverter(this::keycloakAuthoritiesConverter);
+    return new ReactiveJwtAuthenticationConverterAdapter(delegate);
+  }
 
-    AuthenticationWebFilter filter = new AuthenticationWebFilter(authManager);
-
-    filter.setServerAuthenticationConverter(
-        exchange -> {
-          String key = exchange.getRequest().getHeaders().getFirst("X-API-Key");
-          if (key == null || key.isBlank()) return Mono.empty();
-          return Mono.just(new UsernamePasswordAuthenticationToken(null, key.trim()));
-        });
-
-    filter.setAuthenticationFailureHandler(
-        new ServerAuthenticationEntryPointFailureHandler(
-            new HttpStatusServerEntryPoint(HttpStatus.UNAUTHORIZED)));
-
-    return filter;
+  /**
+   * Reads Keycloak's {@code realm_access.roles} claim (e.g. {@code ["gateway-user"]}) and maps each
+   * entry to a {@code ROLE_*} {@link GrantedAuthority}, e.g. {@code ROLE_GATEWAY-USER}.
+   */
+  @SuppressWarnings("unchecked")
+  private Collection<GrantedAuthority> keycloakAuthoritiesConverter(Jwt jwt) {
+    Map<String, Object> realmAccess = jwt.getClaimAsMap("realm_access");
+    if (realmAccess == null || !(realmAccess.get("roles") instanceof Collection<?> roles)) {
+      return List.of();
+    }
+    return roles.stream()
+        .map(String::valueOf)
+        .map(role -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
+        .toList();
   }
 }

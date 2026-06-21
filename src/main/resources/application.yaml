@@ -34,7 +34,7 @@ spring:
           max-active: 20
           max-idle: 10
           min-idle: 2
-  # R2DBC – reactive PostgreSQL used by ApiKeyService at runtime
+  # R2DBC – reactive PostgreSQL used by RequestLogService (audit log) at runtime
   r2dbc:
     url: r2dbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:spring_ai}
     username: ${POSTGRES_USER:postgres}
@@ -59,6 +59,15 @@ spring:
     baseline-version: 0
     baseline-description: existing schema
     table: flyway_schema_history_gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Spring Boot auto-configures a ReactiveJwtDecoder from this realm's discovery
+          # document (issuer-uri + "/.well-known/openid-configuration"). Keycloak's
+          # docker-compose service (port 8081) imports the "llm-gateway" realm on startup —
+          # see docker/keycloak/llm-gateway-realm.json.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/llm-gateway}
   ai:
     # Disable Spring AI's own per-provider retry — the gateway's auto-failover
     # chain handles retries at a higher level. Keeping Spring AI retry enabled

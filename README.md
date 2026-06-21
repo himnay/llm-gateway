@@ -1,6 +1,22 @@
 # LLM Gateway
 
-A production-ready, reactive Spring Boot gateway that provides a single unified API for multiple LLM providers (OpenAI, HuggingFace, Cohere, Anthropic Claude, Ollama). Handles routing, failover, multi-turn chat memory, prompt safety, guardrails (in-process + a LangChain-based guardrails sidecar), caching, API-key authentication, and full observability out of the box.
+A production-ready, reactive Spring Boot gateway that provides a single unified API for multiple LLM providers (OpenAI, HuggingFace, Cohere, Anthropic Claude, Ollama). Handles routing, failover, multi-turn chat memory, prompt safety, guardrails (in-process + a LangChain-based guardrails sidecar), caching, Keycloak/OAuth2 authentication, and full observability out of the box.
+
+---
+
+## What's New (v2.3)
+
+Authentication moved from a custom X-API-Key/Postgres mechanism to Keycloak-issued OAuth2 JWTs:
+
+| # | Category      | Change                                                                                                                                                                                                                                                                                                                                           |
+|---|---------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 | **Breaking**  | `X-API-Key` header auth is **removed**. Every protected request now needs `Authorization: Bearer <jwt>`, where the JWT is issued by Keycloak.                                                                                                                                                                                                    |
+| 2 | **Security**  | `SecurityConfig` now configures `oauth2ResourceServer().jwt(...)` with a custom `JwtAuthenticationConverter` that maps Keycloak's `realm_access.roles` claim to `ROLE_*` authorities (Keycloak doesn't use the standard `scope` claim Spring Security reads by default).                                                                         |
+| 3 | **Removed**   | `ApiKeyService`, `AdminHandler`, and the `/admin/keys` CRUD endpoints are gone — there's no key registry to administer anymore; identity and lifecycle live in Keycloak.                                                                                                                                                                         |
+| 4 | **Database**  | Added `V4__drop_api_keys.sql` — drops the now-unused `api_keys` table (existing `V1`/`V2` migrations are left untouched per Flyway convention; history isn't rewritten).                                                                                                                                                                         |
+| 5 | **Infra**     | Added a `keycloak` service to `docker-compose.yml` (`quay.io/keycloak/keycloak`, dev mode, realm auto-imported from `docker/keycloak/llm-gateway-realm.json`) so OAuth2 works out of the box locally.                                                                                                                                            |
+| 6 | **Config**    | `spring.security.oauth2.resourceserver.jwt.issuer-uri` added, defaulting to the local Keycloak realm; override with `KEYCLOAK_ISSUER_URI` for any other deployment.                                                                                                                                                                              |
+| 7 | **Known gap** | `RequestLogService` audit rows still don't capture caller identity — `LlmGatewayFacade` has always passed `client_id = null` to the audit log (pre-existing, not introduced here). Wiring the JWT subject/`preferred_username` claim into the audit log is a natural follow-up now that every caller is authenticated, but is out of scope here. |
 
 ---
 
@@ -8,18 +24,18 @@ A production-ready, reactive Spring Boot gateway that provides a single unified 
 
 A Spring AI 2.0 alignment review plus a best-practices pass:
 
-| # | Category | Change |
-|---|----------|--------|
-| 1 | **Spring AI 2.0 review** | Audited every custom abstraction against Spring AI 2.0 out-of-box features (ChatClient/Advisors, `MessageChatMemoryAdvisor`, `@Tool`, `EmbeddingModel`, `ImageModel`, `PromptTemplate`, `.entity()` structured output). Verdict: the codebase already uses these idiomatically — there was very little left to replace. |
-| 2 | **Cleanup** | Removed `PromptGuardAdvisor` — it was a pure pass-through that only logged prompt length; injection sanitization already happens upstream in `LlmGatewayFacade`. The advisor chain is now 8 steps, not 9. |
-| 3 | **API versioning** | Base path changed from `/llm` to `/llm/v1` (`spring.webflux.base-path`) so a future breaking v2 can coexist. |
-| 4 | **Security** | `gateway.cors.allowed-origins` was defined in config but never wired to anything — added a `CorsConfigurationSource` bean so it actually takes effect. |
-| 5 | **Docs** | Functional routes (`LlmRouterConfig`) are now annotated with springdoc `@RouterOperation`/`@Operation`, so Swagger UI shows real summaries/descriptions/schemas instead of a bare skeleton. |
-| 6 | **Observability** | Added k8s-style actuator health groups — `/actuator/health/readiness` (Redis + R2DBC + DB) and `/actuator/health/liveness`. |
-| 7 | **Containerization** | Added a multi-stage `Dockerfile` (non-root user, `HEALTHCHECK`) and `.dockerignore` for the main app — previously only the guardrails sidecar had one. |
-| 8 | **Security tooling** | Added OWASP `dependency-check-maven`, opt-in via `mvn -P security-scan verify` (kept out of the default build — needs network/NVD access). |
-| 9 | **Code quality** | Added Spotless + Google Java Format, checked on every `mvn verify`. |
-| 10 | **CI** | `.github/workflows/ci.yml` now also runs `spotless:check`, a non-blocking OWASP scan job, and a non-blocking Docker build validation job. |
+| #  | Category                 | Change                                                                                                                                                                                                                                                                                                                  |
+|----|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1  | **Spring AI 2.0 review** | Audited every custom abstraction against Spring AI 2.0 out-of-box features (ChatClient/Advisors, `MessageChatMemoryAdvisor`, `@Tool`, `EmbeddingModel`, `ImageModel`, `PromptTemplate`, `.entity()` structured output). Verdict: the codebase already uses these idiomatically — there was very little left to replace. |
+| 2  | **Cleanup**              | Removed `PromptGuardAdvisor` — it was a pure pass-through that only logged prompt length; injection sanitization already happens upstream in `LlmGatewayFacade`. The advisor chain is now 8 steps, not 9.                                                                                                               |
+| 3  | **API versioning**       | Base path changed from `/llm` to `/llm/v1` (`spring.webflux.base-path`) so a future breaking v2 can coexist.                                                                                                                                                                                                            |
+| 4  | **Security**             | `gateway.cors.allowed-origins` was defined in config but never wired to anything — added a `CorsConfigurationSource` bean so it actually takes effect.                                                                                                                                                                  |
+| 5  | **Docs**                 | Functional routes (`LlmRouterConfig`) are now annotated with springdoc `@RouterOperation`/`@Operation`, so Swagger UI shows real summaries/descriptions/schemas instead of a bare skeleton.                                                                                                                             |
+| 6  | **Observability**        | Added k8s-style actuator health groups — `/actuator/health/readiness` (Redis + R2DBC + DB) and `/actuator/health/liveness`.                                                                                                                                                                                             |
+| 7  | **Containerization**     | Added a multi-stage `Dockerfile` (non-root user, `HEALTHCHECK`) and `.dockerignore` for the main app — previously only the guardrails sidecar had one.                                                                                                                                                                  |
+| 8  | **Security tooling**     | Added OWASP `dependency-check-maven`, opt-in via `mvn -P security-scan verify` (kept out of the default build — needs network/NVD access).                                                                                                                                                                              |
+| 9  | **Code quality**         | Added Spotless + Google Java Format, checked on every `mvn verify`.                                                                                                                                                                                                                                                     |
+| 10 | **CI**                   | `.github/workflows/ci.yml` now also runs `spotless:check`, a non-blocking OWASP scan job, and a non-blocking Docker build validation job.                                                                                                                                                                               |
 
 ---
 
@@ -27,25 +43,25 @@ A Spring AI 2.0 alignment review plus a best-practices pass:
 
 Security, correctness, and feature improvements:
 
-| # | Category | Change |
-|---|----------|--------|
-| 1 | **Security** | Auth is now **enabled by default** — set `GATEWAY_AUTH_ENABLED=false` only for local dev |
-| 2 | **Security** | Redis password enforced — `REDIS_PASSWORD` defaults to `gatewayredis` in both app and Docker Compose |
-| 3 | **Security** | X-Forwarded-For only trusted from configured `GATEWAY_TRUSTED_PROXIES` (prevents IP spoofing) |
-| 4 | **Security** | Dev seed keys in `V2__seed_api_keys.sql` carry a hard ROTATE warning |
-| 5 | **Bug fix** | `GlobalExceptionHandler` was a `@RestControllerAdvice` that never fired for functional routes — replaced with a proper `WebExceptionHandler` |
-| 6 | **Bug fix** | `RedisChatMemoryRepository.findConversationIds()` used blocking `KEYS *` — replaced with non-blocking `SCAN` cursor |
-| 7 | **Bug fix** | `LlmResponse.response` (duplicate of `content`, never populated) removed |
-| 8 | **Bug fix** | `CompletableFuture.supplyAsync` in auto-failover used ForkJoinPool — replaced with `Mono.fromCallable().subscribeOn(boundedElastic)` |
-| 9 | **Reliability** | `Hooks.enableAutomaticContextPropagation()` called at startup — MDC values (traceId, requestId) now survive Reactor scheduler hops |
-| 10 | **Reliability** | Streaming handler now runs the inbound guardrail chain, enforces a per-stream timeout, and returns structured error events on failure |
-| 11 | **Performance** | `LlmMetricsService` pre-registers counters/timers at startup instead of rebuilding on every request |
-| 12 | **Feature** | `POST /llm/v1/embed` — vector embedding endpoint (OpenAI `text-embedding-3-small` by default) |
-| 13 | **Feature** | Admin API key management — `GET/POST /llm/v1/admin/keys`, `PATCH/DELETE /llm/v1/admin/keys/{id}` |
-| 14 | **Feature** | Audit log — every request persisted to `request_log` table (prompt hash, provider, tokens, latency; raw prompt never stored) |
-| 15 | **Feature** | `GET /llm/v1/models` now returns the **configured** default model per provider, not a hardcoded list |
-| 16 | **Docs** | Swagger UI available at `/llm/v1/swagger-ui.html` (via `springdoc-openapi-starter-webflux-ui`) |
-| 17 | **Config** | `GATEWAY_TRUSTED_PROXIES` and `LLM_STREAM_TIMEOUT_SECONDS` added |
+| #  | Category        | Change                                                                                                                                       |
+|----|-----------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| 1  | **Security**    | Auth is now **enabled by default** — set `GATEWAY_AUTH_ENABLED=false` only for local dev                                                     |
+| 2  | **Security**    | Redis password enforced — `REDIS_PASSWORD` defaults to `gatewayredis` in both app and Docker Compose                                         |
+| 3  | **Security**    | X-Forwarded-For only trusted from configured `GATEWAY_TRUSTED_PROXIES` (prevents IP spoofing)                                                |
+| 4  | **Security**    | Dev seed keys in `V2__seed_api_keys.sql` carry a hard ROTATE warning                                                                         |
+| 5  | **Bug fix**     | `GlobalExceptionHandler` was a `@RestControllerAdvice` that never fired for functional routes — replaced with a proper `WebExceptionHandler` |
+| 6  | **Bug fix**     | `RedisChatMemoryRepository.findConversationIds()` used blocking `KEYS *` — replaced with non-blocking `SCAN` cursor                          |
+| 7  | **Bug fix**     | `LlmResponse.response` (duplicate of `content`, never populated) removed                                                                     |
+| 8  | **Bug fix**     | `CompletableFuture.supplyAsync` in auto-failover used ForkJoinPool — replaced with `Mono.fromCallable().subscribeOn(boundedElastic)`         |
+| 9  | **Reliability** | `Hooks.enableAutomaticContextPropagation()` called at startup — MDC values (traceId, requestId) now survive Reactor scheduler hops           |
+| 10 | **Reliability** | Streaming handler now runs the inbound guardrail chain, enforces a per-stream timeout, and returns structured error events on failure        |
+| 11 | **Performance** | `LlmMetricsService` pre-registers counters/timers at startup instead of rebuilding on every request                                          |
+| 12 | **Feature**     | `POST /llm/v1/embed` — vector embedding endpoint (OpenAI `text-embedding-3-small` by default)                                                |
+| 13 | **Feature**     | Admin API key management — `GET/POST /llm/v1/admin/keys`, `PATCH/DELETE /llm/v1/admin/keys/{id}`                                             |
+| 14 | **Feature**     | Audit log — every request persisted to `request_log` table (prompt hash, provider, tokens, latency; raw prompt never stored)                 |
+| 15 | **Feature**     | `GET /llm/v1/models` now returns the **configured** default model per provider, not a hardcoded list                                         |
+| 16 | **Docs**        | Swagger UI available at `/llm/v1/swagger-ui.html` (via `springdoc-openapi-starter-webflux-ui`)                                               |
+| 17 | **Config**      | `GATEWAY_TRUSTED_PROXIES` and `LLM_STREAM_TIMEOUT_SECONDS` added                                                                             |
 
 ---
 
@@ -86,11 +102,11 @@ This service now targets **Java 25** and **Spring AI 2.0.0** (up from Java 21 an
 
 ```
 Client
-  │   X-API-Key header (when auth enabled)
+  │   Authorization: Bearer <jwt> (when auth enabled)
   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Spring Security WebFlux                                        │
-│  ApiKeyReactiveAuthManager → PostgreSQL api_keys table          │
+│  Spring Security WebFlux — OAuth2 Resource Server                │
+│  ReactiveJwtDecoder ──► Keycloak realm "llm-gateway" (JWKS)      │
 │                                                                 │
 │  LLM Gateway  (Spring WebFlux · Spring Cloud Gateway)           │
 │                                                                 │
@@ -146,38 +162,38 @@ Client
 The gateway is deliberately structured around Gang-of-Four patterns; each is applied where it
 removes real coupling, not for its own sake:
 
-| Pattern | Where | Why |
-|---------|-------|-----|
-| **Facade** | `facade/LlmGatewayFacade` | Single entry point hiding the pipeline (guardrails → cache → tracing → provider → metrics) from handlers |
-| **Strategy** | `facade/LlmServiceProvider` + 6 implementations | Each provider is an interchangeable strategy resolved by name at runtime |
-| **Factory Method / Registry** | `facade/LlmProviderRegistry` | Discovers every `LlmServiceProvider` bean and resolves/validates providers; adding a provider needs zero gateway changes (OCP) |
-| **Chain of Responsibility** | `guardrail/chain/GuardrailChain` + `GuardrailStep`s | Ordered, pluggable inbound guardrail pipeline (sanitization → PII redaction → remote guardrails); any step can rewrite the prompt or reject the request |
-| **Template Method** | `service/AbstractRestLlmService` | Fixes the REST-call skeleton (render system prompt → POST → parse → never throw); Google/Cohere/HuggingFace implement only the hooks (endpoint, headers, payload, parsing) |
-| **Adapter** | `guardrail/remote/RemoteGuardrailClient` | Adapts the LangServe sidecar's REST/JSON API (`POST /guardrails/invoke`) to a typed Java interface |
-| **Observer** | `guardrail/event/GuardrailViolationEvent` + listener | Guardrail rejections publish events; audit logging/alerting subscribe without coupling to the chain |
-| **Decorator** | Spring AI advisor chain (`guardrail/*Advisor`) | Each advisor wraps the ChatClient call, adding behaviour (toxicity, PII, metrics, memory) transparently |
-| **Builder** | Lombok `@Builder` on `LlmRequest`/`LlmResponse` | Safe construction of many-field immutable-style DTOs |
-| **Proxy** | Resilience4j `@CircuitBreaker`/`@Retry` (AOP) | Cross-cutting resilience added via dynamic proxies, not in business code |
-| **Singleton** | Spring-managed beans | All services/components are container-scoped singletons (no hand-rolled singletons) |
+| Pattern                       | Where                                                | Why                                                                                                                                                                        |
+|-------------------------------|------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Facade**                    | `facade/LlmGatewayFacade`                            | Single entry point hiding the pipeline (guardrails → cache → tracing → provider → metrics) from handlers                                                                   |
+| **Strategy**                  | `facade/LlmServiceProvider` + 6 implementations      | Each provider is an interchangeable strategy resolved by name at runtime                                                                                                   |
+| **Factory Method / Registry** | `facade/LlmProviderRegistry`                         | Discovers every `LlmServiceProvider` bean and resolves/validates providers; adding a provider needs zero gateway changes (OCP)                                             |
+| **Chain of Responsibility**   | `guardrail/chain/GuardrailChain` + `GuardrailStep`s  | Ordered, pluggable inbound guardrail pipeline (sanitization → PII redaction → remote guardrails); any step can rewrite the prompt or reject the request                    |
+| **Template Method**           | `service/AbstractRestLlmService`                     | Fixes the REST-call skeleton (render system prompt → POST → parse → never throw); Google/Cohere/HuggingFace implement only the hooks (endpoint, headers, payload, parsing) |
+| **Adapter**                   | `guardrail/remote/RemoteGuardrailClient`             | Adapts the LangServe sidecar's REST/JSON API (`POST /guardrails/invoke`) to a typed Java interface                                                                         |
+| **Observer**                  | `guardrail/event/GuardrailViolationEvent` + listener | Guardrail rejections publish events; audit logging/alerting subscribe without coupling to the chain                                                                        |
+| **Decorator**                 | Spring AI advisor chain (`guardrail/*Advisor`)       | Each advisor wraps the ChatClient call, adding behaviour (toxicity, PII, metrics, memory) transparently                                                                    |
+| **Builder**                   | Lombok `@Builder` on `LlmRequest`/`LlmResponse`      | Safe construction of many-field immutable-style DTOs                                                                                                                       |
+| **Proxy**                     | Resilience4j `@CircuitBreaker`/`@Retry` (AOP)        | Cross-cutting resilience added via dynamic proxies, not in business code                                                                                                   |
+| **Singleton**                 | Spring-managed beans                                 | All services/components are container-scoped singletons (no hand-rolled singletons)                                                                                        |
 
 ---
 
 ## Tech Stack
 
-| Layer            | Technology                                                           |
-|------------------|----------------------------------------------------------------------|
-| Runtime          | Java 25, Spring Boot 4.1.0                                           |
-| Web              | Spring WebFlux (reactive, non-blocking)                              |
-| Security         | Spring Security WebFlux + PostgreSQL API key table                   |
-| LLM Integration  | Spring AI 2.0.0                                                  |
-| LLM Providers    | OpenAI, Anthropic Claude, Ollama, Google Gemini, Cohere, HuggingFace |
-| Guardrails       | In-process chain + LangChain/FastAPI sidecar (REST, Docker)          |
-| Cache + Memory   | Redis (Spring Data Redis / Lettuce)                                  |
-| Database         | PostgreSQL 18 (R2DBC reactive + JDBC for Flyway)                     |
-| Migrations       | Flyway                                                               |
-| Resilience       | Resilience4j (Circuit Breaker, Retry, Rate Limiter)                  |
-| Observability    | Micrometer + OTEL, Prometheus, Grafana Tempo                         |
-| Build            | Maven 3.9+                                                           |
+| Layer            | Technology                                                            |
+|------------------|-----------------------------------------------------------------------|
+| Runtime          | Java 25, Spring Boot 4.1.0                                            |
+| Web              | Spring WebFlux (reactive, non-blocking)                               |
+| Security         | Spring Security WebFlux + PostgreSQL API key table                    |
+| LLM Integration  | Spring AI 2.0.0                                                       |
+| LLM Providers    | OpenAI, Anthropic Claude, Ollama, Google Gemini, Cohere, HuggingFace  |
+| Guardrails       | In-process chain + LangChain/FastAPI sidecar (REST, Docker)           |
+| Cache + Memory   | Redis (Spring Data Redis / Lettuce)                                   |
+| Database         | PostgreSQL 18 (R2DBC reactive + JDBC for Flyway)                      |
+| Migrations       | Flyway                                                                |
+| Resilience       | Resilience4j (Circuit Breaker, Retry, Rate Limiter)                   |
+| Observability    | Micrometer + OTEL, Prometheus, Grafana Tempo                          |
+| Build            | Maven 3.9+                                                            |
 
 ---
 
@@ -189,7 +205,7 @@ removes real coupling, not for its own sake:
 - **Session management** — `DELETE /sessions/{sessionId}` clears history
 - **Prompt template system** — per-provider `.st` files with variable substitution
 - **Assistant message prefill** — steer response format without consuming a user turn
-- **API key authentication** — Spring Security WebFlux backed by a PostgreSQL table; SHA-256 hashed keys, expiry support, `last_used` tracking
+- **OAuth2/Keycloak authentication** — Spring Security WebFlux OAuth2 resource server validates Keycloak-issued JWTs; realm roles mapped to Spring `ROLE_*` authorities
 - **8-step guardrail chain** — prompt safety, PII redaction, toxicity filter, topic restriction, hallucination monitoring, response format validation
 - **External guardrails service** — LangChain-based sidecar (Docker) consulted over REST **before every LLM call** (and optionally on responses); injection/jailbreak heuristics, toxicity, PII masking, topic policy, optional LLM-as-judge; fail-open/fail-closed policy + dedicated circuit breaker
 - **GoF design patterns throughout** — Facade, Strategy, Registry, Chain of Responsibility, Template Method, Adapter, Observer, Decorator, Builder, Proxy (see [Design Patterns](#design-patterns-gof))
@@ -200,7 +216,6 @@ removes real coupling, not for its own sake:
 - **Embeddings** — `POST /llm/v1/embed` generates vector embeddings via OpenAI (or Ollama)
 - **Structured output** — typed Java record extraction from LLM responses (via facade for full observability)
 - **Request timeout** — configurable per-request timeout with 504 response; separate stream timeout
-- **Admin API** — `GET/POST/PATCH/DELETE /llm/v1/admin/keys` for key lifecycle management (raw key returned once on creation)
 - **Audit log** — every request written to `request_log` table (PostgreSQL) for compliance and billing; raw prompts never stored
 - **OpenAPI / Swagger UI** — live API documentation at `/llm/v1/swagger-ui.html`
 - **X-Request-ID propagation** — correlation ID accepted from callers and echoed in response headers and body
@@ -238,18 +253,13 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ### 2. Start dependencies with Docker Compose
 
 ```bash
-docker compose up -d postgres redis guardrails
+docker compose up -d postgres redis guardrails keycloak
 ```
 
 The `guardrails` service is built locally from `guardrails-service/` (base image:
-`langchain/langchain`) the first time you run this.
-
-Flyway runs automatically on startup and creates the `api_keys` table with two seed keys:
-
-| Key name        | Raw value (local dev only)   |
-|-----------------|------------------------------|
-| Development Key | `llm-gateway-dev-key-2026`   |
-| Admin Key       | `llm-gateway-admin-key-2026` |
+`langchain/langchain`) the first time you run this. `keycloak` auto-imports the
+`llm-gateway` realm from `docker/keycloak/llm-gateway-realm.json` on first boot — give it
+~30s to come up, then check `http://localhost:8081` (admin console login: `admin`/`admin`).
 
 > **Spring Boot 4 + Flyway gotcha.** In Spring Boot 4 the per-technology
 > auto-configurations were split out of `spring-boot-autoconfigure` into dedicated
@@ -269,17 +279,25 @@ mvn spring-boot:run
 
 ### 4. Smoke test
 
+Auth is **enabled by default**, so you need a Keycloak access token first (see
+[Security — Keycloak / OAuth2 Authentication](#security--keycloak--oauth2-authentication)
+for the full explanation):
+
 ```bash
-# Without auth (default)
+TOKEN=$(curl -s -X POST \
+  http://localhost:8081/realms/llm-gateway/protocol/openid-connect/token \
+  -d 'grant_type=client_credentials' \
+  -d 'client_id=llm-gateway-client' \
+  -d 'client_secret=llm-gateway-dev-secret' \
+  | jq -r .access_token)
+
 curl -X POST http://localhost:8080/llm/v1/query \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"prompt": "Hello!", "provider": "OPENAI"}'
 
-# With auth enabled
-curl -X POST http://localhost:8080/llm/v1/query \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: llm-gateway-dev-key-2026" \
-  -d '{"prompt": "Hello!", "provider": "OPENAI"}'
+# Or disable auth entirely for local dev:
+# export GATEWAY_AUTH_ENABLED=false
 ```
 
 ---
@@ -299,14 +317,14 @@ docker compose up -d postgres redis guardrails
 docker compose up -d prometheus grafana tempo
 ```
 
-| Service            | Port | Purpose                                        |
-|--------------------|------|------------------------------------------------|
-| Guardrails sidecar | 8000 | LangServe guardrails API (`POST /guardrails/invoke`, playground at `/guardrails/playground`) |
-| PostgreSQL         | 5432 | API key registry                               |
-| Redis              | 6379 | Prompt cache + chat memory                     |
-| Prometheus         | 9090 | Metrics                                        |
-| Grafana            | 3000 | Dashboards (admin/admin)                       |
-| Grafana Tempo      | 4318 | OTLP trace collector                           |
+| Service            | Port  | Purpose                                                                                      |
+|--------------------|-------|----------------------------------------------------------------------------------------------|
+| Guardrails sidecar | 8000  | LangServe guardrails API (`POST /guardrails/invoke`, playground at `/guardrails/playground`) |
+| PostgreSQL         | 5432  | API key registry                                                                             |
+| Redis              | 6379  | Prompt cache + chat memory                                                                   |
+| Prometheus         | 9090  | Metrics                                                                                      |
+| Grafana            | 3000  | Dashboards (admin/admin)                                                                     |
+| Grafana Tempo      | 4318  | OTLP trace collector                                                                         |
 
 ---
 
@@ -316,10 +334,10 @@ All values can be overridden via environment variables.
 
 ### Server
 
-| Property                   | Env Var | Default |
-|----------------------------|---------|---------|
-| `server.port`              | —       | `8080`  |
-| `spring.webflux.base-path` | —       | `/llm/v1`  |
+| Property                   | Env Var | Default   |
+|----------------------------|---------|-----------|
+| `server.port`              | —       | `8080`    |
+| `spring.webflux.base-path` | —       | `/llm/v1` |
 
 ### PostgreSQL
 
@@ -402,23 +420,23 @@ LLM_PROVIDERS_OPENAI_ENABLED=false
 
 Sidecar-side knobs (set on the `guardrails` container in `docker-compose.yml`):
 
-| Env Var                    | Default | Description                                            |
-|----------------------------|---------|--------------------------------------------------------|
-| `GUARDRAILS_BLOCKED_TOPICS`| _(empty)_ | Comma-separated restricted topics                    |
-| `GUARDRAILS_MAX_LENGTH`    | `10000` | Max accepted text length                               |
-| `GUARDRAILS_LLM_CHECK`     | `false` | Enable LangChain LLM-as-judge (needs `OPENAI_API_KEY`) |
+| Env Var                     | Default    | Description                                              |
+|-----------------------------|------------|----------------------------------------------------------|
+| `GUARDRAILS_BLOCKED_TOPICS` | _(empty)_  | Comma-separated restricted topics                        |
+| `GUARDRAILS_MAX_LENGTH`     | `10000`    | Max accepted text length                                 |
+| `GUARDRAILS_LLM_CHECK`      | `false`    | Enable LangChain LLM-as-judge (needs `OPENAI_API_KEY`)   |
 
 ### Security
 
-| Env Var                              | Default | Description                                          |
-|---------------------------------------|---------|------------------------------------------------------|
-| `GATEWAY_AUTH_ENABLED`                | `true`  | API-key auth — set `false` only for local dev        |
-| `GATEWAY_CORS_ORIGINS`                | `http://localhost:3000,http://localhost:8080` | Comma-separated allowed CORS origins |
-| `LLM_SANITIZATION_ENABLED`            | `true`  | Prompt injection detection                            |
-| `LLM_MAX_PROMPT_LENGTH`               | `10000` | Hard cap on prompt characters                         |
-| `LLM_SENSITIVE_DATA_ENABLED`          | `true`  | PII + secret redaction (all providers)                |
-| `LLM_SENSITIVE_DATA_REDACT_PROMPT`    | `true`  | Redact before sending to provider                     |
-| `LLM_SENSITIVE_DATA_REDACT_RESPONSE`  | `true`  | Redact before returning to caller                     |
+| Env Var                                | Default                                       | Description                                           |
+|----------------------------------------|-----------------------------------------------|-------------------------------------------------------|
+| `GATEWAY_AUTH_ENABLED`                 | `true`                                        | API-key auth — set `false` only for local dev         |
+| `GATEWAY_CORS_ORIGINS`                 | `http://localhost:3000,http://localhost:8080` | Comma-separated allowed CORS origins                  |
+| `LLM_SANITIZATION_ENABLED`             | `true`                                        | Prompt injection detection                            |
+| `LLM_MAX_PROMPT_LENGTH`                | `10000`                                       | Hard cap on prompt characters                         |
+| `LLM_SENSITIVE_DATA_ENABLED`           | `true`                                        | PII + secret redaction (all providers)                |
+| `LLM_SENSITIVE_DATA_REDACT_PROMPT`     | `true`                                        | Redact before sending to provider                     |
+| `LLM_SENSITIVE_DATA_REDACT_RESPONSE`   | `true`                                        | Redact before returning to caller                     |
 
 ### Observability
 
@@ -428,76 +446,91 @@ Sidecar-side knobs (set on the `guardrails` container in `docker-compose.yml`):
 
 ---
 
-## Security — API Key Authentication
+## Security — Keycloak / OAuth2 Authentication
 
 ### How it works
 
-1. Client sends `X-API-Key: <raw-key>` header
-2. Spring Security's `AuthenticationWebFilter` extracts the key
-3. `ApiKeyService` hashes it with SHA-256 and queries the `api_keys` PostgreSQL table
-4. If the key exists, is enabled, and is not expired → request is authenticated
-5. `last_used` timestamp is updated asynchronously (non-blocking)
-6. If no key or invalid key → **HTTP 401**
-7. Actuator endpoints (`/actuator/**`) are always permitted without a key
+1. Client obtains a JWT access token from Keycloak (client-credentials grant for
+   service/script callers, or password/authorization-code grant for human users)
+2. Client sends `Authorization: Bearer <jwt>` on every request
+3. Spring Security's OAuth2 resource server validates the JWT signature against
+   Keycloak's JWKS endpoint (derived from `issuer-uri`) and checks `exp`/`iat`/`iss`
+4. `SecurityConfig`'s custom `JwtAuthenticationConverter` reads the `realm_access.roles`
+   claim and maps each role to a `ROLE_<NAME>` Spring authority
+5. If the token is missing, expired, or fails signature validation → **HTTP 401**
+   (returned automatically by `BearerTokenAuthenticationEntryPoint`)
+6. Actuator endpoints (`/actuator/**`) and the public info/docs routes are always
+   permitted without a token
 
-### Database schema
+There is no local user/key registry anymore — Keycloak is the single source of identity.
+Disable auth entirely for local dev with `GATEWAY_AUTH_ENABLED=false`.
 
-```sql
-CREATE TABLE api_keys (
-    id          BIGSERIAL     PRIMARY KEY,
-    name        VARCHAR(100)  NOT NULL,
-    key_hash    CHAR(64)      NOT NULL,   -- SHA-256(raw_key) hex
-    client_id   VARCHAR(100),
-    enabled     BOOLEAN       NOT NULL DEFAULT TRUE,
-    created_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-    expires_at  TIMESTAMPTZ,              -- NULL = never expires
-    last_used   TIMESTAMPTZ,
-    CONSTRAINT api_keys_hash_unique UNIQUE (key_hash)
-);
-```
+### Local Keycloak setup
 
-Flyway manages the schema. Migrations live in `src/main/resources/db/migration/`.
+`docker compose up -d keycloak` starts Keycloak in dev mode and auto-imports the
+`llm-gateway` realm from `docker/keycloak/llm-gateway-realm.json`:
 
-### Seeded keys (local development)
+| Resource                    | Value                                                                                                     |
+|-----------------------------|-----------------------------------------------------------------------------------------------------------|
+| Admin console               | `http://localhost:8081` (`admin` / `admin`, override via `KEYCLOAK_ADMIN_USER`/`KEYCLOAK_ADMIN_PASSWORD`) |
+| Realm                       | `llm-gateway`                                                                                             |
+| Client (machine-to-machine) | `llm-gateway-client` / secret `llm-gateway-dev-secret` — service account + direct-access-grants enabled   |
+| Demo human user             | `dev-user` / `devpassword` (realm role `gateway-user`)                                                    |
+| Realm roles                 | `gateway-user`, `gateway-admin` (the client's service account holds `gateway-admin`)                      |
 
-Migration `V2__seed_api_keys.sql` pre-loads two ready-to-use keys so you can exercise the gateway with auth enabled without minting your own. Send the **raw value** in the `X-API-Key` header — the gateway hashes it and matches the SHA-256 stored in `key_hash`.
+> ⚠️ The client secret and demo user password are committed to source control for
+> **local development only**. Rotate them (or re-import a different realm) before any
+> real deployment, and never reuse `llm-gateway-dev-secret` outside your laptop.
 
-| Name            | `client_id`    | Raw key (`X-API-Key`)        | Purpose                                                                                                     |
-|-----------------|----------------|------------------------------|-------------------------------------------------------------------------------------------------------------|
-| Development Key | `dev-client`   | `llm-gateway-dev-key-2026`   | Day-to-day local testing — the key you'd normally use from Insomnia/curl.                                   |
-| Admin Key       | `admin-client` | `llm-gateway-admin-key-2026` | Represents a separate, higher-trust caller, distinguished by its own `client_id` for audit/log attribution. |
+### Getting a token
 
-Both keys are functionally equivalent today (the gateway does not yet enforce per-role authorization) — the difference is the **`client_id`** each authenticates as, which is what shows up in `last_used` tracking and request logs. They are **local-development credentials only**; rotate or remove them before any real deployment.
-
-### Adding a new API key
-
-```sql
--- Use PostgreSQL's pgcrypto to hash the raw key
-INSERT INTO api_keys (name, key_hash, client_id)
-VALUES (
-    'My Service',
-    encode(digest('your-raw-api-key-here', 'sha256'), 'hex'),
-    'my-service'
-);
-```
-
-### Enabling auth
+**Service-to-service (client-credentials grant)** — what curl/scripts/CI should use:
 
 ```bash
-export GATEWAY_AUTH_ENABLED=true
+curl -s -X POST http://localhost:8081/realms/llm-gateway/protocol/openid-connect/token \
+  -d 'grant_type=client_credentials' \
+  -d 'client_id=llm-gateway-client' \
+  -d 'client_secret=llm-gateway-dev-secret' \
+  | jq -r .access_token
 ```
 
-Auth is **disabled by default** so the gateway works out of the box in local development.
+**Human user (password grant, dev/test only)**:
 
-### Rotating a key
+```bash
+curl -s -X POST http://localhost:8081/realms/llm-gateway/protocol/openid-connect/token \
+  -d 'grant_type=password' \
+  -d 'client_id=llm-gateway-client' \
+  -d 'client_secret=llm-gateway-dev-secret' \
+  -d 'username=dev-user' \
+  -d 'password=devpassword' \
+  | jq -r .access_token
+```
 
-```sql
--- Disable the old key
-UPDATE api_keys SET enabled = FALSE WHERE name = 'My Service';
+Use the returned `access_token` as `Authorization: Bearer <token>` on every gateway call.
+Tokens expire after 15 minutes (`accessTokenLifespan` in the realm export) — re-request
+when you get a 401.
 
--- Insert the new key
-INSERT INTO api_keys (name, key_hash, client_id)
-VALUES ('My Service v2', encode(digest('new-raw-key', 'sha256'), 'hex'), 'my-service');
+### Adding roles or callers
+
+Everything is managed in Keycloak, not in this codebase:
+
+- New machine client → create another confidential client with `serviceAccountsEnabled`,
+  assign it whichever realm role you need, in the Keycloak admin console (or extend
+  `docker/keycloak/llm-gateway-realm.json` and re-run `docker compose up -d keycloak`
+  — note `--import-realm` only imports on first boot of a fresh Keycloak volume).
+- New human user → create a user in the realm and assign realm roles.
+- Pointing at a different/production Keycloak → set `KEYCLOAK_ISSUER_URI` to that
+  realm's issuer URL; no code changes needed.
+
+### Authorizing by role (extension point)
+
+The gateway currently treats "has a valid token" as sufficient for every protected
+route — it doesn't yet gate specific endpoints by role (mirroring the old API-key
+model, where any valid key could call anything). To restrict an endpoint to
+`gateway-admin`, add to `SecurityConfig`:
+
+```java
+.pathMatchers("/llm/v1/some-admin-route").hasRole("GATEWAY-ADMIN")
 ```
 
 ---
@@ -510,11 +543,11 @@ All request bodies are JSON. All responses are JSON.
 
 **Common request headers:**
 
-| Header                           | Description                                                                          |
-|----------------------------------|--------------------------------------------------------------------------------------|
-| `Content-Type: application/json` | Required                                                                             |
-| `X-API-Key: <key>`               | Required when `GATEWAY_AUTH_ENABLED=true`                                            |
-| `X-Request-ID: <uuid>`           | Optional; echoed back as `X-Request-ID` response header and `correlation_id` in body |
+| Header                           | Description                                                                                            |
+|----------------------------------|--------------------------------------------------------------------------------------------------------|
+| `Content-Type: application/json` | Required                                                                                               |
+| `Authorization: Bearer <jwt>`    | Required when `GATEWAY_AUTH_ENABLED=true` — see [Security](#security--keycloak--oauth2-authentication) |
+| `X-Request-ID: <uuid>`           | Optional; echoed back as `X-Request-ID` response header and `correlation_id` in body                   |
 
 ---
 
@@ -684,40 +717,11 @@ Generate a vector embedding for the given text (OpenAI by default).
 ```bash
 curl -X POST http://localhost:8080/llm/v1/embed \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: llm-gateway-dev-key-2026" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"text": "The quick brown fox jumps over the lazy dog."}'
 ```
 
 Response includes `embedding` (float array), `dimensions`, `model`, and `provider`.
-
----
-
-### Admin — API Key Management
-
-All routes under `/llm/v1/admin/` require a valid `X-API-Key` header.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/admin/keys` | List all keys (names, status, last_used — never hashes) |
-| POST | `/admin/keys` | Create a new key — raw key returned **once only** |
-| PATCH | `/admin/keys/{id}` | Enable/disable or set expiry |
-| DELETE | `/admin/keys/{id}` | Permanently delete a key |
-
-```bash
-# Create a new key
-curl -X POST http://localhost:8080/llm/v1/admin/keys \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: llm-gateway-admin-key-2026" \
-  -d '{"name": "prod-client-1", "client_id": "service-a"}'
-
-# Disable a key
-curl -X PATCH http://localhost:8080/llm/v1/admin/keys/3 \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: llm-gateway-admin-key-2026" \
-  -d '{"enabled": false}'
-```
-
-> ⚠️ The `raw_key` field is returned **only** in the POST `/admin/keys` response. Store it securely — it cannot be retrieved again.
 
 ---
 
@@ -762,11 +766,11 @@ A GoF *Chain of Responsibility* (`guardrail/chain/GuardrailChain`) executed by t
 advisor chain. Steps run in `Ordered` order; each can rewrite the prompt or reject the
 request with HTTP 400 (which also publishes a `GuardrailViolationEvent` for the audit log):
 
-| Order | Step                      | What it does                                                       |
-|-------|---------------------------|--------------------------------------------------------------------|
-| 100   | `prompt-sanitization`     | Injection/jailbreak regex blocking, strip + whitespace normalising  |
-| 200   | `sensitive-data-redaction`| PII/secret masking (`[EMAIL]`, `[API_KEY]`, …)                      |
-| 300   | `remote-guardrails`       | REST call to the [LangServe guardrails sidecar](#guardrails-service-langserve-sidecar) |
+| Order | Step                       | What it does                                                                           |
+|-------|----------------------------|----------------------------------------------------------------------------------------|
+| 100   | `prompt-sanitization`      | Injection/jailbreak regex blocking, strip + whitespace normalising                     |
+| 200   | `sensitive-data-redaction` | PII/secret masking (`[EMAIL]`, `[API_KEY]`, …)                                         |
+| 300   | `remote-guardrails`        | REST call to the [LangServe guardrails sidecar](#guardrails-service-langserve-sidecar) |
 
 Adding a step = one `@Component` implementing `GuardrailStep` — no facade changes.
 
@@ -812,11 +816,11 @@ applies a provider-agnostic `SensitiveDataRedactor`:
 Detected categories: e-mail, phone, credit-card, SSN, IBAN, IP address, passport, plus
 secrets — API keys (`sk-…`), AWS access keys (`AKIA…`), bearer tokens and PEM private keys.
 
-| Env Var                              | Default | Description                              |
-|--------------------------------------|---------|------------------------------------------|
-| `LLM_SENSITIVE_DATA_ENABLED`         | `true`  | Master switch for the sensitive-data guard |
-| `LLM_SENSITIVE_DATA_REDACT_PROMPT`   | `true`  | Redact before sending to the provider    |
-| `LLM_SENSITIVE_DATA_REDACT_RESPONSE` | `true`  | Redact before returning to the caller    |
+| Env Var                               | Default  | Description                                |
+|---------------------------------------|----------|--------------------------------------------|
+| `LLM_SENSITIVE_DATA_ENABLED`          | `true`   | Master switch for the sensitive-data guard |
+| `LLM_SENSITIVE_DATA_REDACT_PROMPT`    | `true`   | Redact before sending to the provider      |
+| `LLM_SENSITIVE_DATA_REDACT_RESPONSE`  | `true`   | Redact before returning to the caller      |
 
 ### Tuning guardrail patterns without code changes
 
@@ -824,12 +828,12 @@ All guardrail pattern lists are externalised in `GuardrailPatternProperties`
 (`llm.guardrails.patterns.*`) so they can be added/removed/edited purely in
 configuration — no recompile:
 
-| Config key                              | Used by                | Form               |
-|-----------------------------------------|------------------------|--------------------|
-| `llm.guardrails.patterns.sensitive-data`| `SensitiveDataRedactor`| `name → regex` map |
-| `llm.guardrails.patterns.injection`     | `PromptSanitizer`      | list of regex      |
-| `llm.guardrails.patterns.strip`         | `PromptSanitizer`      | list of regex      |
-| `llm.guardrails.patterns.toxic-keywords`| `ToxicityFilterAdvisor`| list of substrings |
+| Config key                               | Used by                 | Form                |
+|------------------------------------------|-------------------------|---------------------|
+| `llm.guardrails.patterns.sensitive-data` | `SensitiveDataRedactor` | `name → regex` map  |
+| `llm.guardrails.patterns.injection`      | `PromptSanitizer`       | list of regex       |
+| `llm.guardrails.patterns.strip`          | `PromptSanitizer`       | list of regex       |
+| `llm.guardrails.patterns.toxic-keywords` | `ToxicityFilterAdvisor` | list of substrings  |
 
 Sensible, fail-safe defaults ship in code (so protection is never accidentally
 disabled); any value you set in YAML **replaces** that category. See the commented
@@ -865,15 +869,15 @@ LlmGatewayFacade ──► GuardrailChain ──► RemoteGuardrailStep
 
 ### API
 
-| Endpoint | Description |
-|---|---|
-| `POST /guardrails/invoke` | Single validation call (used by the Java gateway) |
-| `POST /guardrails/batch` | Batch of inputs in one request |
-| `POST /guardrails/stream` | Streaming response |
-| `GET  /guardrails/playground` | Interactive browser UI for manual testing |
-| `POST /v1/validate` | Legacy endpoint (kept for backward compatibility) |
-| `GET  /health` | Liveness + LLM judge status |
-| `GET  /v1/checks` | Active checks + current policy |
+| Endpoint                      | Description                                       |
+|-------------------------------|---------------------------------------------------|
+| `POST /guardrails/invoke`     | Single validation call (used by the Java gateway) |
+| `POST /guardrails/batch`      | Batch of inputs in one request                    |
+| `POST /guardrails/stream`     | Streaming response                                |
+| `GET  /guardrails/playground` | Interactive browser UI for manual testing         |
+| `POST /v1/validate`           | Legacy endpoint (kept for backward compatibility) |
+| `GET  /health`                | Liveness + LLM judge status                       |
+| `GET  /v1/checks`             | Active checks + current policy                    |
 
 ```bash
 # Validate a prompt via LangServe invoke
@@ -930,17 +934,17 @@ Exposed at `GET /llm/v1/actuator/prometheus`.
 
 Custom application metrics (emitted by `LlmMetricsService` + the `@Timed` facade):
 
-| Metric (Prometheus name)        | Type             | Labels                         | Meaning |
-|---------------------------------|------------------|--------------------------------|---------|
-| `llm_provider_calls_total`      | counter          | `provider`, `model`, `outcome` | **Calls routed to each provider** (success/error) |
-| `llm_requests_total`            | counter          | `provider`, `cache_hit`        | Total requests incl. cache hits |
-| `llm_requests_errors_total`     | counter          | `provider`, `error_type`       | Errors by type |
-| `llm_requests_rejected_total`   | counter          | `provider`, `reason`           | Requests blocked by guardrails |
-| `llm_request_latency_seconds`   | histogram        | `provider`                     | Per-provider LLM call latency (p50/p95/p99) |
-| `llm_tokens_total`              | counter          | `provider`, `model`, `type`    | Token usage (prompt/completion/total) |
-| `llm_prompt_length_chars`       | summary          | `provider`                     | Prompt size distribution |
-| `llm_gateway_execution_seconds` | timer (`@Timed`) | `operation`                    | **Gateway turnaround time** (execute / failover / auto-failover) |
-| `http_server_requests_seconds`  | timer (built-in) | `uri`, `method`, `status`      | **REST API turnaround time per endpoint** |
+| Metric (Prometheus name)         | Type              | Labels                          | Meaning                                                          |
+|----------------------------------|-------------------|---------------------------------|------------------------------------------------------------------|
+| `llm_provider_calls_total`       | counter           | `provider`, `model`, `outcome`  | **Calls routed to each provider** (success/error)                |
+| `llm_requests_total`             | counter           | `provider`, `cache_hit`         | Total requests incl. cache hits                                  |
+| `llm_requests_errors_total`      | counter           | `provider`, `error_type`        | Errors by type                                                   |
+| `llm_requests_rejected_total`    | counter           | `provider`, `reason`            | Requests blocked by guardrails                                   |
+| `llm_request_latency_seconds`    | histogram         | `provider`                      | Per-provider LLM call latency (p50/p95/p99)                      |
+| `llm_tokens_total`               | counter           | `provider`, `model`, `type`     | Token usage (prompt/completion/total)                            |
+| `llm_prompt_length_chars`        | summary           | `provider`                      | Prompt size distribution                                         |
+| `llm_gateway_execution_seconds`  | timer (`@Timed`)  | `operation`                     | **Gateway turnaround time** (execute / failover / auto-failover) |
+| `http_server_requests_seconds`   | timer (built-in)  | `uri`, `method`, `status`       | **REST API turnaround time per endpoint**                        |
 
 Histogram buckets are enabled for latency metrics (`management.metrics.distribution.percentiles-histogram`)
 so Grafana can compute percentiles.
@@ -959,15 +963,15 @@ Every request creates an OTEL span `llm.request`. Trace and span IDs appear in e
 
 ### Actuator endpoints
 
-| Endpoint                            | Description                                          |
-|--------------------------------------|------------------------------------------------------|
-| `/llm/v1/actuator/health`            | Spring Boot health (includes Redis probe)            |
-| `/llm/v1/actuator/health/readiness`  | k8s `readinessProbe` — Redis + R2DBC + DB included    |
-| `/llm/v1/actuator/health/liveness`   | k8s `livenessProbe` — process liveness only           |
-| `/llm/v1/actuator/metrics`           | Browse individual metrics (JSON)                      |
-| `/llm/v1/actuator/prometheus`        | Prometheus scrape                                     |
-| `/llm/v1/actuator/circuitbreakers`   | Resilience4j state                                    |
-| `/llm/v1/actuator/loggers`           | Runtime log level changes                             |
+| Endpoint                              | Description                                           |
+|---------------------------------------|-------------------------------------------------------|
+| `/llm/v1/actuator/health`             | Spring Boot health (includes Redis probe)             |
+| `/llm/v1/actuator/health/readiness`   | k8s `readinessProbe` — Redis + R2DBC + DB included    |
+| `/llm/v1/actuator/health/liveness`    | k8s `livenessProbe` — process liveness only           |
+| `/llm/v1/actuator/metrics`            | Browse individual metrics (JSON)                      |
+| `/llm/v1/actuator/prometheus`         | Prometheus scrape                                     |
+| `/llm/v1/actuator/circuitbreakers`    | Resilience4j state                                    |
+| `/llm/v1/actuator/loggers`            | Runtime log level changes                             |
 
 Example k8s deployment probes:
 
@@ -1002,7 +1006,7 @@ src/
     │   ├── handler/       LlmHandler, LlmStreamHandler
     │   ├── image/         ImageHandler, ImageService
     │   ├── observability/ LlmMetricsService
-    │   ├── security/      SecurityConfig, ApiKeyService, PromptSanitizer, SensitiveDataRedactor, ...
+    │   ├── security/      SecurityConfig (Keycloak/OAuth2), PromptSanitizer, SensitiveDataRedactor, ...
     │   ├── service/       AbstractRestLlmService (Template Method),
     │   │                  OpenAiService, AnthropicClaudeService, OllamaService,
     │   │                  GoogleGeminiService, CohereService, HuggingFaceService
@@ -1012,8 +1016,10 @@ src/
     └── resources/
         ├── application.yaml
         ├── db/migration/
-        │   ├── V1__create_api_keys.sql   Schema + pgcrypto
-        │   └── V2__seed_api_keys.sql     Dev seed keys
+        │   ├── V1__create_api_keys.sql   (historical — table dropped in V4)
+        │   ├── V2__seed_api_keys.sql     (historical — table dropped in V4)
+        │   ├── V3__create_request_log.sql Audit log table
+        │   └── V4__drop_api_keys.sql     Drops api_keys — auth now lives in Keycloak
         └── prompts/
             ├── system-openai.st
             ├── system-anthropic.st
@@ -1034,6 +1040,12 @@ guardrails-service/                        LangServe guardrails sidecar (Docker)
 ├── Dockerfile                             FROM langchain/langchain + FastAPI + LangServe
 ├── app.py                                 /guardrails/invoke|batch|stream|playground, /v1/validate, /health
 └── requirements.txt
+docker/
+├── keycloak/
+│   └── llm-gateway-realm.json             Realm + client + roles, auto-imported on first boot
+├── prometheus.yml
+└── tempo.yaml
+Dockerfile                                 Multi-stage build for the main app
 docker-compose.yml
 PROMETHEUS_GRAFANA_SETUP.md               Prometheus + Grafana setup guide
 ```
@@ -1046,16 +1058,16 @@ Import `insomnia-collection.json` into Insomnia to get all endpoints pre-configu
 
 **Environment variables in the collection:**
 
-| Variable          | Default                              | Description            |
-|-------------------|--------------------------------------|------------------------|
-| `base_url`        | `http://localhost:8080/llm/v1`       | Gateway base URL       |
-| `api_key`         | `llm-gateway-dev-key-2026`           | X-API-Key header value |
-| `session_id`      | `test-session-001`                   | Chat session ID        |
-| `openai_model`    | `gpt-4o`                             | OpenAI model           |
-| `anthropic_model` | `claude-3-5-sonnet-20241022`         | Claude model           |
-| `google_model`    | `gemini-1.5-pro-latest`              | Gemini model           |
-| `cohere_model`    | `command-r-plus`                     | Cohere model           |
-| `hf_model`        | `mistralai/Mistral-7B-Instruct-v0.1` | HuggingFace model      |
+| Variable           | Default                               | Description                                                                                  |
+|--------------------|---------------------------------------|----------------------------------------------------------------------------------------------|
+| `base_url`         | `http://localhost:8080/llm/v1`        | Gateway base URL                                                                             |
+| `access_token`     | `PASTE_A_KEYCLOAK_JWT_HERE`           | Bearer token — paste a fresh Keycloak access token (see [Getting a token](#getting-a-token)) |
+| `session_id`       | `test-session-001`                    | Chat session ID                                                                              |
+| `openai_model`     | `gpt-4o`                              | OpenAI model                                                                                 |
+| `anthropic_model`  | `claude-3-5-sonnet-20241022`          | Claude model                                                                                 |
+| `google_model`     | `gemini-1.5-pro-latest`               | Gemini model                                                                                 |
+| `cohere_model`     | `command-r-plus`                      | Cohere model                                                                                 |
+| `hf_model`         | `mistralai/Mistral-7B-Instruct-v0.1`  | HuggingFace model                                                                            |
 
 **Folders in the collection:**
 
@@ -1173,6 +1185,14 @@ HTTP request → WebFlux router → LlmHandler → boundedElastic scheduler
 
 ---
 
+### Keycloak
+
+**What it is:** An open-source identity and access management server (originally a JBoss/Red Hat project) implementing OAuth2/OIDC — issues, signs, and validates JWT access tokens against realms, clients, users, and roles.
+
+**How it's used here:** Spring Security's OAuth2 **resource server** support (`spring-boot-starter-oauth2-resource-server`) validates every incoming `Authorization: Bearer <jwt>` against Keycloak's JWKS endpoint — the gateway never talks to Keycloak synchronously per-request beyond that signature check, and never stores credentials itself. `docker-compose.yml` runs Keycloak in dev mode and imports the `llm-gateway` realm (`docker/keycloak/llm-gateway-realm.json`) automatically. See [Security — Keycloak / OAuth2 Authentication](#security--keycloak--oauth2-authentication) for the full flow.
+
+---
+
 ### PostgreSQL 18
 
 **What it is:** A relational database.
@@ -1185,7 +1205,7 @@ HTTP request → WebFlux router → LlmHandler → boundedElastic scheduler
 
 **What it is:** A web-based GUI for PostgreSQL.
 
-**How it's used here:** Runs at **http://localhost:5050** in Docker desktop mode (no login required). Use it to browse the `spring_ai` database, inspect the `api_keys` table, run ad-hoc SQL, and monitor query activity during development.
+**How it's used here:** Runs at **http://localhost:5050** in Docker desktop mode (no login required). Use it to browse the `spring_ai` database, inspect the `request_log` audit table, run ad-hoc SQL, and monitor query activity during development.
 
 ```
 Browser → pgAdmin :5050 → postgres :5432 (service name inside Docker network)
@@ -1225,7 +1245,7 @@ POST /chat  →  Redis GET session:{id}   (load history)
 
 **What it is:** A database migration tool — it tracks and applies versioned SQL scripts to keep your schema in sync with the application.
 
-**How it's used here:** On every application startup, Flyway connects via JDBC (separate from the R2DBC runtime connection) and runs any pending scripts from `src/main/resources/db/migration/`. The migration history is stored in `flyway_schema_history_gateway`. This ensures the `api_keys` table and any future schema changes are applied automatically in every environment.
+**How it's used here:** On every application startup, Flyway connects via JDBC (separate from the R2DBC runtime connection) and runs any pending scripts from `src/main/resources/db/migration/`. The migration history is stored in `flyway_schema_history_gateway`. This ensures the `request_log` table and any future schema changes are applied automatically in every environment.
 
 ---
 
@@ -1233,7 +1253,7 @@ POST /chat  →  Redis GET session:{id}   (load history)
 
 **What it is:** Reactive Relational Database Connectivity — a non-blocking alternative to JDBC for relational databases.
 
-**How it's used here:** The `ApiKeyService` uses R2DBC's reactive PostgreSQL driver to query the `api_keys` table without blocking a thread. This keeps the full request pipeline reactive — an auth check doesn't stall the event loop.
+**How it's used here:** `RequestLogService` uses R2DBC's reactive PostgreSQL driver to write audit rows to the `request_log` table without blocking a thread. This keeps the full request pipeline reactive. Authentication itself no longer touches Postgres at all — JWT validation happens entirely against Keycloak's JWKS, with no database round-trip.
 
 ---
 
@@ -1243,12 +1263,12 @@ POST /chat  →  Redis GET session:{id}   (load history)
 
 **How it's used here — three patterns:**
 
-| Pattern | Instance | What it protects |
-|---|---|---|
-| **Circuit Breaker** | `llm-gateway` | Wraps LLM provider calls — opens after 50% failure rate, pauses for 30s |
+| Pattern             | Instance             | What it protects                                                           |
+|---------------------|----------------------|----------------------------------------------------------------------------|
+| **Circuit Breaker** | `llm-gateway`        | Wraps LLM provider calls — opens after 50% failure rate, pauses for 30s    |
 | **Circuit Breaker** | `guardrails-service` | Wraps the LangServe sidecar call — opens after 50% failure, pauses for 20s |
-| **Retry** | `llm-gateway` | Retries failed LLM calls up to 3× with exponential backoff (2s→4s→8s) |
-| **Rate Limiter** | `llm-gateway` | 60 requests/minute per gateway instance |
+| **Retry**           | `llm-gateway`        | Retries failed LLM calls up to 3× with exponential backoff (2s→4s→8s)      |
+| **Rate Limiter**    | `llm-gateway`        | 60 requests/minute per gateway instance                                    |
 
 When the guardrails circuit is open the gateway either fails-open (continues without remote validation) or fails-closed (rejects the request) based on `LLM_EXTERNAL_GUARDRAILS_FAIL_OPEN`.
 
