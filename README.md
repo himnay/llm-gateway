@@ -1,6 +1,25 @@
 # LLM Gateway
 
-A production-ready, reactive Spring Boot gateway that provides a single unified API for multiple LLM providers (OpenAI, HuggingFace, Cohere, Anthropic Claude, Ollama). Handles routing, failover, multi-turn chat memory, prompt safety, guardrails (in-process + a LangChain-based guardrails sidecar), caching, Keycloak/OAuth2 authentication, and full observability out of the box.
+A production-ready, reactive Spring Boot platform split into independently runnable Maven modules —
+**`llm-gateway-core`** (a single unified API for multiple LLM providers: OpenAI, HuggingFace, Cohere,
+Anthropic Claude, Ollama — with routing, failover, multi-turn chat memory, prompt safety, guardrails,
+caching, Keycloak/OAuth2 authentication, and full observability) and **`llm-openrouter`** (a thin
+reactive chat service backed by [OpenRouter](https://openrouter.ai), OpenRouter's own vendor-prefixed
+model catalog).
+
+---
+
+## What's New (v2.4)
+
+Split into a multi-module Maven reactor and added an OpenRouter-backed module:
+
+| # | Category | Change |
+|---|----------|--------|
+| 1 | **Restructuring** | The single-module `llm-gateway` project is now a thin aggregator (`packaging=pom`) over two child modules: `llm-gateway-core` (all the existing code, unchanged behavior) and the new `llm-openrouter`. |
+| 2 | **Feature** | Added `llm-openrouter` — a reactive Spring AI service that calls [OpenRouter](https://openrouter.ai)'s OpenAI-SDK-compatible API (`POST /openrouter/v1/chat`), with per-request model override (OpenRouter's vendor-prefixed ids, e.g. `anthropic/claude-3.5-sonnet`), Resilience4j retry/circuit-breaker, and the same Keycloak JWT resource-server auth as every other service on the platform. |
+| 3 | **Infra** | Added `llm-openrouter-client` to the shared Keycloak realm (`docker/keycloak/llm-gateway-realm.json`). |
+| 4 | **Build hygiene** | Stopped hardcoding third-party version numbers directly in module `pom.xml` files. `springdoc-openapi-starter-webflux-ui`'s version now comes from `learning-bom`'s `dependencyManagement` (a property + import, like every other managed dependency); `spotless-maven-plugin` and `org.owasp:dependency-check-maven`'s versions now come from `super-pom`'s `pluginManagement` (mirroring the existing `jacoco-maven-plugin` pattern). Module `pom.xml`s declare these without a `<version>`. |
+| 5 | **Docker** | The root `Dockerfile` is now parametrized by a `MODULE` build-arg (`llm-gateway-core` \| `llm-openrouter`), mirroring `llm-chat`'s multi-module Dockerfile pattern. |
 
 ---
 
@@ -87,13 +106,14 @@ This service now targets **Java 25** and **Spring AI 2.0.0** (up from Java 21 an
 - [Quick Start](#quick-start)
 - [Docker Compose](#docker-compose)
 - [Configuration Reference](#configuration-reference)
-- [Security — API Key Authentication](#security--api-key-authentication)
+- [Security — Keycloak / OAuth2 Authentication](#security--keycloak--oauth2-authentication)
 - [API Documentation](#api-documentation)
 - [Prompt Template System](#prompt-template-system)
 - [Guardrail Chain](#guardrail-chain)
 - [Guardrails Service (LangServe sidecar)](#guardrails-service-langserve-sidecar)
 - [Observability](#observability)
 - [Project Structure](#project-structure)
+- [llm-openrouter Module](#llm-openrouter-module)
 - [Technology Deep Dive](#technology-deep-dive)
 
 ---
@@ -273,8 +293,11 @@ The `guardrails` service is built locally from `guardrails-service/` (base image
 
 ### 3. Build and run
 
+This is now a multi-module reactor — target a specific module with `-pl`, or `cd` into it:
+
 ```bash
-mvn spring-boot:run
+mvn -pl llm-gateway-core spring-boot:run     # the gateway itself, port 8080
+mvn -pl llm-openrouter spring-boot:run       # OpenRouter-backed chat service, port 8085
 ```
 
 ### 4. Smoke test
@@ -470,13 +493,27 @@ Disable auth entirely for local dev with `GATEWAY_AUTH_ENABLED=false`.
 `docker compose up -d keycloak` starts Keycloak in dev mode and auto-imports the
 `llm-gateway` realm from `docker/keycloak/llm-gateway-realm.json`:
 
-| Resource                    | Value                                                                                                     |
-|-----------------------------|-----------------------------------------------------------------------------------------------------------|
-| Admin console               | `http://localhost:8081` (`admin` / `admin`, override via `KEYCLOAK_ADMIN_USER`/`KEYCLOAK_ADMIN_PASSWORD`) |
-| Realm                       | `llm-gateway`                                                                                             |
-| Client (machine-to-machine) | `llm-gateway-client` / secret `llm-gateway-dev-secret` — service account + direct-access-grants enabled   |
-| Demo human user             | `dev-user` / `devpassword` (realm role `gateway-user`)                                                    |
-| Realm roles                 | `gateway-user`, `gateway-admin` (the client's service account holds `gateway-admin`)                      |
+| Resource         | Value                                                                                                     |
+|------------------|-----------------------------------------------------------------------------------------------------------|
+| Admin console    | `http://localhost:8081` (`admin` / `admin`, override via `KEYCLOAK_ADMIN_USER`/`KEYCLOAK_ADMIN_PASSWORD`) |
+| Realm            | `llm-gateway` — shared by every service on the platform, not just this one                                |
+| Demo human user  | `dev-user` / `devpassword` (realm role `gateway-user`)                                                    |
+| Realm roles      | `gateway-user`, `gateway-admin` (each service's service account holds `gateway-user` except `llm-gateway-client`, which holds `gateway-admin`) |
+
+One confidential client per service (all service-account + direct-access-grants enabled):
+
+| Service            | Client id                 | Dev secret                       |
+|--------------------|----------------------------|-----------------------------------|
+| llm-gateway-core   | `llm-gateway-client`       | `llm-gateway-dev-secret`          |
+| llm-openrouter     | `llm-openrouter-client`    | `llm-openrouter-dev-secret`       |
+| llm-chat-agent     | `llm-chat-agent-client`    | `llm-chat-agent-dev-secret`       |
+| llm-audio          | `llm-audio-client`         | `llm-audio-dev-secret`            |
+| llm-image          | `llm-image-client`         | `llm-image-dev-secret`            |
+| llm-rag-pipeline   | `llm-rag-pipeline-client`  | `llm-rag-pipeline-dev-secret`     |
+| llm-rag-graph      | `llm-rag-graph-client`     | `llm-rag-graph-dev-secret`        |
+
+(`llm-chat-agent`/`llm-audio`/`llm-image`/`llm-rag-pipeline`/`llm-rag-graph` live in the sibling
+`llm-chat`/`llm-rag` repos — they point at this same Keycloak instance via `KEYCLOAK_ISSUER_URI`.)
 
 > ⚠️ The client secret and demo user password are committed to source control for
 > **local development only**. Rotate them (or re-import a different realm) before any
@@ -727,7 +764,7 @@ Response includes `embedding` (float array), `dimensions`, `model`, and `provide
 
 ## Prompt Template System
 
-System prompts live in `.st` files under `src/main/resources/prompts/`. Each provider has its own template.
+System prompts live in `.st` files under `llm-gateway-core/src/main/resources/prompts/`. Each provider has its own template.
 
 | File                   | Provider                   |
 |------------------------|----------------------------|
@@ -988,44 +1025,64 @@ livenessProbe:
 
 ## Project Structure
 
+A multi-module Maven reactor — the root `pom.xml` is a thin aggregator (`packaging=pom`); all
+code lives in the child modules below.
+
 ```
-src/
-└── main/
-    ├── java/com/llm/gateway/llm_gateway/
-    │   ├── cache/         PromptCacheService, RedisChatMemoryRepository
-    │   ├── config/        ChatClientConfig, LlmRouterConfig, ObservabilityConfig, GuardrailPatternProperties, ...
-    │   ├── dto/           LlmRequest, LlmResponse, LlmProvider, StructuredLlmResponse
-    │   ├── exception/     GlobalExceptionHandler, LLMProviderNotSupportedException
-    │   ├── facade/        LlmGatewayFacade (Facade), LlmProviderRegistry (Registry),
-    │   │                  LlmServiceProvider (Strategy SPI)
-    │   ├── guardrail/     8 advisor classes + AdvisorUtils (shared extraction helpers)
-    │   │   ├── chain/     GuardrailChain + GuardrailStep (Chain of Responsibility):
-    │   │   │              PromptSanitizationStep, SensitiveDataRedactionStep, RemoteGuardrailStep
-    │   │   ├── event/     GuardrailViolationEvent + audit listener (Observer)
-    │   │   └── remote/    RemoteGuardrailClient (Adapter), RemoteGuardrailProperties
-    │   ├── handler/       LlmHandler, LlmStreamHandler
-    │   ├── image/         ImageHandler, ImageService
-    │   ├── observability/ LlmMetricsService
-    │   ├── security/      SecurityConfig (Keycloak/OAuth2), PromptSanitizer, SensitiveDataRedactor, ...
-    │   ├── service/       AbstractRestLlmService (Template Method),
-    │   │                  OpenAiService, AnthropicClaudeService, OllamaService,
-    │   │                  GoogleGeminiService, CohereService, HuggingFaceService
-    │   ├── template/      PromptTemplateService
-    │   └── tools/         GatewayTools
-    │
-    └── resources/
-        ├── application.yaml
-        ├── db/migration/
-        │   ├── V1__create_api_keys.sql   (historical — table dropped in V4)
-        │   ├── V2__seed_api_keys.sql     (historical — table dropped in V4)
-        │   ├── V3__create_request_log.sql Audit log table
-        │   └── V4__drop_api_keys.sql     Drops api_keys — auth now lives in Keycloak
-        └── prompts/
-            ├── system-openai.st
-            ├── system-anthropic.st
-            ├── system-ollama.st
-            ├── system-default.st
-            └── assistant-starter.st
+pom.xml                                     Aggregator: packaging=pom, <modules> only
+
+llm-gateway-core/                           The gateway itself (port 8080)
+├── pom.xml
+└── src/
+    └── main/
+        ├── java/com/llm/gateway/llm_gateway/
+        │   ├── cache/         PromptCacheService, RedisChatMemoryRepository
+        │   ├── config/        ChatClientConfig, LlmRouterConfig, ObservabilityConfig, GuardrailPatternProperties, ...
+        │   ├── dto/           LlmRequest, LlmResponse, LlmProvider, StructuredLlmResponse
+        │   ├── exception/     GlobalExceptionHandler, LLMProviderNotSupportedException
+        │   ├── facade/        LlmGatewayFacade (Facade), LlmProviderRegistry (Registry),
+        │   │                  LlmServiceProvider (Strategy SPI)
+        │   ├── guardrail/     8 advisor classes + AdvisorUtils (shared extraction helpers)
+        │   │   ├── chain/     GuardrailChain + GuardrailStep (Chain of Responsibility):
+        │   │   │              PromptSanitizationStep, SensitiveDataRedactionStep, RemoteGuardrailStep
+        │   │   ├── event/     GuardrailViolationEvent + audit listener (Observer)
+        │   │   └── remote/    RemoteGuardrailClient (Adapter), RemoteGuardrailProperties
+        │   ├── handler/       LlmHandler, LlmStreamHandler
+        │   ├── image/         ImageHandler, ImageService
+        │   ├── observability/ LlmMetricsService
+        │   ├── security/      SecurityConfig (Keycloak/OAuth2), PromptSanitizer, SensitiveDataRedactor, ...
+        │   ├── service/       AbstractRestLlmService (Template Method),
+        │   │                  OpenAiService, AnthropicClaudeService, OllamaService,
+        │   │                  GoogleGeminiService, CohereService, HuggingFaceService
+        │   ├── template/      PromptTemplateService
+        │   └── tools/         GatewayTools
+        │
+        └── resources/
+            ├── application.yaml
+            ├── db/migration/
+            │   ├── V1__create_api_keys.sql   (historical — table dropped in V4)
+            │   ├── V2__seed_api_keys.sql     (historical — table dropped in V4)
+            │   ├── V3__create_request_log.sql Audit log table
+            │   └── V4__drop_api_keys.sql     Drops api_keys — auth now lives in Keycloak
+            └── prompts/
+                ├── system-openai.st
+                ├── system-anthropic.st
+                ├── system-ollama.st
+                ├── system-default.st
+                └── assistant-starter.st
+
+llm-openrouter/                             OpenRouter-backed chat service (port 8085)
+├── pom.xml
+└── src/
+    ├── main/
+    │   ├── java/com/llm/gateway/openrouter/
+    │   │   ├── LlmOpenrouterApplication.java
+    │   │   ├── config/    OpenRouterChatClientConfig, SecurityConfig (Keycloak/OAuth2)
+    │   │   ├── dto/       OpenRouterRequest, OpenRouterResponse
+    │   │   ├── service/   OpenRouterService (Resilience4j retry/circuit-breaker)
+    │   │   └── web/       OpenRouterController, GlobalExceptionHandler
+    │   └── resources/application.yaml
+    └── test/java/com/llm/gateway/openrouter/   OpenRouterServiceTest, OpenRouterControllerTest
 
 observability/
 ├── prometheus.yml                       Prometheus scrape config (/llm/v1/actuator/prometheus)
@@ -1045,7 +1102,7 @@ docker/
 │   └── llm-gateway-realm.json             Realm + client + roles, auto-imported on first boot
 ├── prometheus.yml
 └── tempo.yaml
-Dockerfile                                 Multi-stage build for the main app
+Dockerfile                                 Multi-stage build, parametrized by MODULE build-arg
 docker-compose.yml
 PROMETHEUS_GRAFANA_SETUP.md               Prometheus + Grafana setup guide
 ```
@@ -1108,12 +1165,76 @@ Uses the HuggingFace Serverless Inference API with its OpenAI-compatible endpoin
 
 ---
 
-## Building
+## llm-openrouter Module
+
+A separate, independently runnable module (port `8085`) that talks to
+[OpenRouter](https://openrouter.ai) — a single API that routes to many vendors' models, addressed
+with vendor-prefixed ids (`openai/gpt-4o`, `anthropic/claude-3.5-sonnet`, `google/gemini-1.5-pro`,
+`meta-llama/llama-3.1-70b-instruct`, ...). Unlike `llm-gateway-core`'s multi-provider routing
+(separate `ChatModel` per vendor SDK), this module talks to exactly one endpoint — OpenRouter
+itself — by pointing Spring AI's OpenAI client at OpenRouter's OpenAI-SDK-compatible base URL.
+
+### Configuration
+
+| Env Var                   | Default                                            | Description                                  |
+|----------------------------|-----------------------------------------------------|------------------------------------------------|
+| `OPENROUTER_BASE_URL`      | `https://openrouter.ai/api/v1`                      | OpenRouter's OpenAI-SDK-compatible endpoint    |
+| `OPENROUTER_API_KEY`       | `sk-or-placeholder`                                 | Your OpenRouter API key                        |
+| `OPENROUTER_MODEL`         | `openai/gpt-4o`                                     | Default model (vendor-prefixed)                |
+| `OPENROUTER_TEMPERATURE`   | `0.7`                                                | Sampling temperature                            |
+| `OPENROUTER_MAX_TOKENS`    | `2048`                                               | Max completion tokens                           |
+| `OPENROUTER_APP_URL`       | `https://github.com/himansu/llm-gateway`            | Sent as `HTTP-Referer` (OpenRouter app attribution) |
+| `OPENROUTER_APP_TITLE`     | `LLM Gateway OpenRouter Module`                     | Sent as `X-Title`                               |
+| `GATEWAY_AUTH_ENABLED`     | `true`                                               | Same Keycloak JWT auth as the rest of the platform |
+| `KEYCLOAK_ISSUER_URI`      | `http://localhost:8081/realms/llm-gateway`          | Shared Keycloak realm (started from `llm-gateway-core`'s docker-compose) |
+
+### API
 
 ```bash
-mvn clean install          # compile + test
-mvn spring-boot:run        # run locally
-mvn clean package -DskipTests && java -jar target/llm-gateway-*.jar
+TOKEN=$(curl -s -X POST http://localhost:8081/realms/llm-gateway/protocol/openid-connect/token \
+  -d 'grant_type=client_credentials' \
+  -d 'client_id=llm-openrouter-client' \
+  -d 'client_secret=llm-openrouter-dev-secret' \
+  | jq -r .access_token)
+
+curl -X POST http://localhost:8085/openrouter/v1/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"prompt": "Explain recursion in one sentence."}'
+
+# Override the model per request
+curl -X POST http://localhost:8085/openrouter/v1/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"prompt": "Explain recursion in one sentence.", "model": "anthropic/claude-3.5-sonnet"}'
+```
+
+Response shape matches the rest of the platform — `content`, `model`, `provider`, token usage,
+`latency_ms`, `correlation_id` (echoed from `X-Request-ID` if supplied), `error` on failure.
+
+### Resilience
+
+Wrapped in Resilience4j `@Retry`/`@CircuitBreaker` (instance name `openrouter`, configured in
+`llm-openrouter/src/main/resources/application.yaml`) — OpenRouter is a third-party dependency that
+can rate-limit or time out, same reasoning as `llm-gateway-core`'s per-provider resilience.
+
+---
+
+## Building
+
+`mvn` at the repo root builds the whole reactor (both modules). Target one module with `-pl`:
+
+```bash
+mvn clean install                              # compile + test, both modules
+mvn -pl llm-gateway-core -am clean install      # just llm-gateway-core (+ build its deps)
+mvn -pl llm-openrouter -am clean install        # just llm-openrouter
+
+mvn -pl llm-gateway-core spring-boot:run        # run llm-gateway-core locally
+mvn -pl llm-openrouter spring-boot:run          # run llm-openrouter locally
+
+mvn clean package -DskipTests
+java -jar llm-gateway-core/target/llm-gateway-core-*.jar
+java -jar llm-openrouter/target/llm-openrouter-*.jar
 ```
 
 ### Code formatting (Spotless)
@@ -1144,10 +1265,22 @@ mvn -P security-scan verify
 
 ### Docker image
 
+The root `Dockerfile` builds one module at a time, selected via the `MODULE` build-arg
+(defaults to `llm-gateway-core`):
+
 ```bash
-docker build -t llm-gateway:local \
+# llm-gateway-core
+docker build -t llm-gateway-core:local \
+  --build-arg MODULE=llm-gateway-core --build-arg PORT=8080 \
   --secret id=maven_settings,src=$HOME/.m2/settings.xml .
-docker run -p 8080:8080 --env-file .env llm-gateway:local
+docker run -p 8080:8080 --env-file .env llm-gateway-core:local
+
+# llm-openrouter
+docker build -t llm-openrouter:local \
+  --build-arg MODULE=llm-openrouter --build-arg PORT=8085 \
+  --build-arg HEALTHCHECK_PATH=/openrouter/v1/actuator/health/readiness \
+  --secret id=maven_settings,src=$HOME/.m2/settings.xml .
+docker run -p 8085:8085 --env-file .env llm-openrouter:local
 ```
 
 The build stage resolves the private `super-pom`/`learning-bom` parent from your configured
@@ -1245,7 +1378,7 @@ POST /chat  →  Redis GET session:{id}   (load history)
 
 **What it is:** A database migration tool — it tracks and applies versioned SQL scripts to keep your schema in sync with the application.
 
-**How it's used here:** On every application startup, Flyway connects via JDBC (separate from the R2DBC runtime connection) and runs any pending scripts from `src/main/resources/db/migration/`. The migration history is stored in `flyway_schema_history_gateway`. This ensures the `request_log` table and any future schema changes are applied automatically in every environment.
+**How it's used here:** On every application startup, Flyway connects via JDBC (separate from the R2DBC runtime connection) and runs any pending scripts from `llm-gateway-core/src/main/resources/db/migration/`. The migration history is stored in `flyway_schema_history_gateway`. This ensures the `request_log` table and any future schema changes are applied automatically in every environment.
 
 ---
 

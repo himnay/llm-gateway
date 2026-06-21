@@ -101,6 +101,20 @@
       "authorizationServicesEnabled": false,
       "redirectUris": [],
       "webOrigins": []
+    },
+    {
+      "clientId": "llm-openrouter-client",
+      "name": "LLM OpenRouter (machine-to-machine)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "llm-openrouter-dev-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
     }
   ],
   "users": [
@@ -138,6 +152,12 @@
       "username": "service-account-llm-rag-graph-client",
       "enabled": true,
       "serviceAccountClientId": "llm-rag-graph-client",
+      "realmRoles": ["gateway-user"]
+    },
+    {
+      "username": "service-account-llm-openrouter-client",
+      "enabled": true,
+      "serviceAccountClientId": "llm-openrouter-client",
       "realmRoles": ["gateway-user"]
     },
     {

@@ -1,0 +1,111 @@
+app:
+  metadata:
+    project-name: LLM OpenRouter
+    description: Reactive Spring AI chat service backed by OpenRouter
+    group-id: com.llm.gateway
+    artifact-id: llm-openrouter
+    project-version: 0.0.1-SNAPSHOT
+
+server:
+  port: ${SERVER_PORT:8085} # 8080=llm-gateway-core, 8081=keycloak/llm-rag-pipeline, 8082=llm-chat-agent, 8083=llm-audio, 8084=llm-image, 8085=llm-openrouter
+  shutdown: graceful
+
+spring:
+  application:
+    name: llm-openrouter
+  main:
+    web-application-type: reactive
+  webflux:
+    base-path: /openrouter/v1
+  ai:
+    openai:
+      # OpenRouter exposes an OpenAI-SDK-compatible API at this base URL — Spring AI's OpenAI
+      # client (backed by the official openai-java SDK as of Spring AI 2.0) appends
+      # /chat/completions itself, so this must include the /v1 segment OpenRouter expects.
+      base-url: ${OPENROUTER_BASE_URL:https://openrouter.ai/api/v1}
+      api-key: ${OPENROUTER_API_KEY:sk-or-placeholder}
+      # OpenRouter-specific headers used for its app leaderboard / rate-limit attribution —
+      # both optional, but recommended by OpenRouter's own docs.
+      custom-headers:
+        HTTP-Referer: ${OPENROUTER_APP_URL:https://github.com/himansu/llm-gateway}
+        X-Title: ${OPENROUTER_APP_TITLE:LLM Gateway OpenRouter Module}
+      chat:
+        # OpenRouter model ids are vendor-prefixed, e.g. openai/gpt-4o, anthropic/claude-3.5-sonnet,
+        # google/gemini-1.5-pro, meta-llama/llama-3.1-70b-instruct.
+        model: ${OPENROUTER_MODEL:openai/gpt-4o}
+        temperature: ${OPENROUTER_TEMPERATURE:0.7}
+        max-tokens: ${OPENROUTER_MAX_TOKENS:2048}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Shared Keycloak instance defined in llm-gateway-core's docker-compose.yml; this
+          # service has its own client (llm-openrouter-client) in the same "llm-gateway" realm.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8081/realms/llm-gateway}
+
+gateway:
+  auth:
+    enabled: ${GATEWAY_AUTH_ENABLED:true}
+  cors:
+    allowed-origins: ${GATEWAY_CORS_ORIGINS:http://localhost:3000,http://localhost:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+      roles: ACTUATOR
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState
+        liveness:
+          include: livenessState
+    info:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      openrouter:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        recordExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.reactive.function.client.WebClientResponseException
+  retry:
+    instances:
+      openrouter:
+        maxAttempts: 3
+        waitDuration: 1s
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+        retryExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}/%X{spanId}] %-5level %logger{36} - %msg%n"
+  level:
+    root: INFO
+    com.llm.gateway.openrouter: DEBUG
+    org.springframework.ai: INFO
