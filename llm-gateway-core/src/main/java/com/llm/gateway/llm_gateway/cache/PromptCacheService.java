@@ -2,6 +2,7 @@ package com.llm.gateway.llm_gateway.cache;
 
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
+import com.llm.gateway.llm_gateway.exception.LlmGatewayInternalException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -142,7 +143,7 @@ public class PromptCacheService {
       return HexFormat.of().formatHex(hash);
     } catch (NoSuchAlgorithmException e) {
       // SHA-256 is always available in JDK – this branch is unreachable
-      throw new IllegalStateException("SHA-256 unavailable", e);
+      throw new LlmGatewayInternalException("SHA-256 unavailable", e);
     }
   }
 }

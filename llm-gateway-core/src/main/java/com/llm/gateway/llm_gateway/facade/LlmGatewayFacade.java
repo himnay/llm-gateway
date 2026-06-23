@@ -8,6 +8,7 @@ import com.llm.gateway.llm_gateway.dto.LlmResponse;
 import com.llm.gateway.llm_gateway.dto.StructuredLlmResponse;
 import com.llm.gateway.llm_gateway.exception.InvalidRequestException;
 import com.llm.gateway.llm_gateway.exception.LLMProviderNotSupportedException;
+import com.llm.gateway.llm_gateway.exception.LlmGatewayInternalException;
 import com.llm.gateway.llm_gateway.guardrail.chain.GuardrailChain;
 import com.llm.gateway.llm_gateway.guardrail.chain.GuardrailContext;
 import com.llm.gateway.llm_gateway.guardrail.remote.GuardrailValidationResult;
@@ -412,7 +413,7 @@ public class LlmGatewayFacade {
         }
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
-        throw new RuntimeException("Auto-failover interrupted", ex);
+        throw new LlmGatewayInternalException("Auto-failover interrupted", ex);
       }
     }
 
@@ -474,7 +475,7 @@ public class LlmGatewayFacade {
    */
   public StructuredLlmResponse executeStructured(LlmRequest request) {
     if (openAiService == null) {
-      throw new IllegalStateException(
+      throw new LLMProviderNotSupportedException(
           "OpenAI provider is not available for structured output extraction");
     }
     String reqId =

@@ -2,6 +2,7 @@ package com.llm.gateway.llm_gateway.audit;
 
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
+import com.llm.gateway.llm_gateway.exception.LlmGatewayInternalException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -80,7 +81,7 @@ public class RequestLogService {
       MessageDigest md = MessageDigest.getInstance("SHA-256");
       return HexFormat.of().formatHex(md.digest(input.getBytes(StandardCharsets.UTF_8)));
     } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 unavailable", e);
+      throw new LlmGatewayInternalException("SHA-256 unavailable", e);
     }
   }
 }

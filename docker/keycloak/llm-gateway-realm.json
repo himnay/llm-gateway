@@ -115,6 +115,20 @@
       "authorizationServicesEnabled": false,
       "redirectUris": [],
       "webOrigins": []
+    },
+    {
+      "clientId": "llm-orchestrator-client",
+      "name": "LLM Orchestrator (machine-to-machine)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "llm-orchestrator-dev-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
     }
   ],
   "users": [
@@ -158,6 +172,12 @@
       "username": "service-account-llm-openrouter-client",
       "enabled": true,
       "serviceAccountClientId": "llm-openrouter-client",
+      "realmRoles": ["gateway-user"]
+    },
+    {
+      "username": "service-account-llm-orchestrator-client",
+      "enabled": true,
+      "serviceAccountClientId": "llm-orchestrator-client",
       "realmRoles": ["gateway-user"]
     },
     {

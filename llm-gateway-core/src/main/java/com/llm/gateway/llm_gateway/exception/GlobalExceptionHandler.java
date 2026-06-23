@@ -58,6 +58,11 @@ public class GlobalExceptionHandler implements WebExceptionHandler {
       status = HttpStatus.GATEWAY_TIMEOUT;
       body = errorBody(status, "Request timed out", List.of());
 
+    } else if (ex instanceof LlmGatewayInternalException) {
+      log.error("Internal gateway error", ex);
+      status = HttpStatus.INTERNAL_SERVER_ERROR;
+      body = errorBody(status, "An internal error occurred. Please try again.", List.of());
+
     } else {
       log.error("Unhandled exception", ex);
       status = HttpStatus.INTERNAL_SERVER_ERROR;

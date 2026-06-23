@@ -1,0 +1,33 @@
+openapi: 3.0.3
+info:
+  title: llm-gateway-core models
+  description: >
+    OpenAPI schema fragment used solely to generate Java model classes via
+    openapi-generator-maven-plugin (generateApis=false). No paths are defined;
+    this file exists only to drive component-schema -> POJO generation for
+    DTOs that were originally hand-written Java records.
+  version: "1.0.0"
+paths: {}
+components:
+  schemas:
+    StructuredLlmResponse:
+      type: object
+      description: >
+        Structured JSON extraction result produced by Spring AI's
+        BeanOutputConverter (see LlmGatewayFacade#executeStructured). Originally
+        a Java record with components in this exact order: summary, keyPoints,
+        sentiment, confidence.
+      properties:
+        summary:
+          type: string
+        key_points:
+          type: array
+          items:
+            type: string
+        sentiment:
+          type: string
+        confidence:
+          type: number
+          format: double
+      required:
+        - confidence
