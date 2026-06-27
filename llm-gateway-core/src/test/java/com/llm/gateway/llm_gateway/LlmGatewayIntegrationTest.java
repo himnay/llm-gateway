@@ -32,8 +32,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
       "llm.external.guardrails.enabled=false",
       "llm.guardrails.external.enabled=false"
     })
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(TestcontainersConfiguration.class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers(disabledWithoutDocker = true)
 class LlmGatewayIntegrationTest {
 
@@ -70,8 +70,8 @@ class LlmGatewayIntegrationTest {
   // Health & Info
   // ─────────────────────────────────────────────────────────────────────────
 
-  @DisplayName("GET /health returns 200 UP")
   @Test
+  @DisplayName("GET /health returns 200 UP")
   void health_returns200() {
     webTestClient
         .get()
@@ -83,8 +83,8 @@ class LlmGatewayIntegrationTest {
         .value(body -> assertThat(body.get("status")).isEqualTo("UP"));
   }
 
-  @DisplayName("GET /models returns provider model catalog")
   @Test
+  @DisplayName("GET /models returns provider model catalog")
   void models_returnsAllProviders() {
     webTestClient
         .get()
@@ -103,8 +103,8 @@ class LlmGatewayIntegrationTest {
   // Unified query endpoint
   // ─────────────────────────────────────────────────────────────────────────
 
-  @DisplayName("POST /query routes to openai by default")
   @Test
+  @DisplayName("POST /query routes to openai by default")
   void query_defaultsToOpenAi() {
     // /query goes through auto-failover (silently routes to the next provider on auth/config
     // errors)
@@ -128,8 +128,8 @@ class LlmGatewayIntegrationTest {
     verify(facade).executeWithAutoFailover(eq("openai"), any());
   }
 
-  @DisplayName("POST /query uses provider from request body")
   @Test
+  @DisplayName("POST /query uses provider from request body")
   void query_usesRequestBodyProvider() {
     LlmResponse anthropicResponse =
         LlmResponse.builder()
@@ -155,8 +155,8 @@ class LlmGatewayIntegrationTest {
   // Per-provider dynamic route
   // ─────────────────────────────────────────────────────────────────────────
 
-  @DisplayName("POST /{provider}/chat routes to correct provider")
   @Test
+  @DisplayName("POST /{provider}/chat routes to correct provider")
   void perProviderChat_routesCorrectly() {
     when(facade.execute(eq("ollama"), any()))
         .thenReturn(
@@ -182,8 +182,8 @@ class LlmGatewayIntegrationTest {
   // Failover endpoint
   // ─────────────────────────────────────────────────────────────────────────
 
-  @DisplayName("POST /failover succeeds on first provider")
   @Test
+  @DisplayName("POST /failover succeeds on first provider")
   void failover_succeedsOnFirstProvider() {
     when(facade.executeWithFailover(anyList(), any())).thenReturn(SUCCESS_RESPONSE);
 
@@ -199,8 +199,8 @@ class LlmGatewayIntegrationTest {
         .value(r -> assertThat(r.getError()).isNull());
   }
 
-  @DisplayName("POST /failover uses default chain when providers not specified")
   @Test
+  @DisplayName("POST /failover uses default chain when providers not specified")
   void failover_usesDefaultChainWhenNoProviders() {
     when(facade.executeWithFailover(eq(List.of("openai", "anthropic", "ollama")), any()))
         .thenReturn(SUCCESS_RESPONSE);
@@ -221,8 +221,8 @@ class LlmGatewayIntegrationTest {
   // Multi-turn chat
   // ─────────────────────────────────────────────────────────────────────────
 
-  @DisplayName("POST /chat rejects request without session_id")
   @Test
+  @DisplayName("POST /chat rejects request without session_id")
   void chat_rejects_missingSessionId() {
     webTestClient
         .post()
@@ -238,8 +238,8 @@ class LlmGatewayIntegrationTest {
     verifyNoInteractions(facade);
   }
 
-  @DisplayName("POST /chat with session_id delegates to facade")
   @Test
+  @DisplayName("POST /chat with session_id delegates to facade")
   void chat_withSessionId_delegatesToFacade() {
     when(facade.executeWithAutoFailover(eq("openai"), any())).thenReturn(SUCCESS_RESPONSE);
 
@@ -261,8 +261,8 @@ class LlmGatewayIntegrationTest {
   // Error handling
   // ─────────────────────────────────────────────────────────────────────────
 
-  @DisplayName("Unknown provider returns 400 bad request")
   @Test
+  @DisplayName("Unknown provider returns 400 bad request")
   void unknownProvider_returns400() {
     when(facade.execute(eq("nonexistent"), any()))
         .thenThrow(new IllegalArgumentException("Unknown LLM provider: 'nonexistent'"));
@@ -279,8 +279,8 @@ class LlmGatewayIntegrationTest {
         .value(body -> assertThat(body.get("error").toString()).contains("nonexistent"));
   }
 
-  @DisplayName("Internal server error returns 500")
   @Test
+  @DisplayName("Internal server error returns 500")
   void internalError_returns500() {
     when(facade.executeWithAutoFailover(any(), any()))
         .thenThrow(new RuntimeException("Unexpected failure"));

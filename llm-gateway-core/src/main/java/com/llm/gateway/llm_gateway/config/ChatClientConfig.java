@@ -46,8 +46,8 @@ public class ChatClientConfig {
   private final HallucinationMonitorAdvisor hallucinationMonitor;
   private final ChatMemory chatMemory;
 
-  @Primary
   @Bean("openAiChatClient")
+  @Primary
   public ChatClient openAiChatClient(OpenAiChatModel model) {
     return ChatClient.builder(model)
         .defaultAdvisors(

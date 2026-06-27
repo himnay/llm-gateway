@@ -19,10 +19,10 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /** POST /openrouter/v1/chat — single-turn chat via OpenRouter. */
+@Tag(name = "OpenRouter")
 @Slf4j
 @RestController
 @RequiredArgsConstructor
-@Tag(name = "OpenRouter")
 public class OpenRouterController {
 
   private final OpenRouterService openRouterService;

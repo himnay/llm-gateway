@@ -10,9 +10,9 @@ import lombok.NoArgsConstructor;
 
 @Data
 @Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @NoArgsConstructor
 @AllArgsConstructor
-@JsonInclude(JsonInclude.Include.NON_NULL)
 public class LlmResponse {
 
   private String provider;

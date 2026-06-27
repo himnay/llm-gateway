@@ -41,8 +41,8 @@ class RemoteGuardrailStepTest {
     return new GuardrailContext("openai", "req-1", request);
   }
 
-  @DisplayName("passing validation lets the request continue unchanged")
   @Test
+  @DisplayName("passing validation lets the request continue unchanged")
   void passingValidationContinues() {
     when(client.validate(anyString(), eq("input")))
         .thenReturn(GuardrailValidationResult.passedResult());
@@ -54,8 +54,8 @@ class RemoteGuardrailStepTest {
     assertThat(context.isPromptModified()).isFalse();
   }
 
-  @DisplayName("failed validation rejects the request with the sidecar's violations")
   @Test
+  @DisplayName("failed validation rejects the request with the sidecar's violations")
   void failedValidationRejects() {
     when(client.validate(anyString(), eq("input")))
         .thenReturn(
@@ -69,8 +69,8 @@ class RemoteGuardrailStepTest {
     verify(metricsService).recordRejectedRequest("openai", "EXTERNAL_GUARDRAIL");
   }
 
-  @DisplayName("sanitized text from the sidecar replaces the prompt")
   @Test
+  @DisplayName("sanitized text from the sidecar replaces the prompt")
   void sanitizedTextReplacesPrompt() {
     when(client.validate(anyString(), eq("input")))
         .thenReturn(new GuardrailValidationResult(true, List.of(), "my email is [EMAIL]", 0.0));
@@ -82,8 +82,8 @@ class RemoteGuardrailStepTest {
     assertThat(context.isPromptModified()).isTrue();
   }
 
-  @DisplayName("disabled step never calls the sidecar")
   @Test
+  @DisplayName("disabled step never calls the sidecar")
   void disabledStepSkipsCall() {
     properties.setEnabled(false);
 

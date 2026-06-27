@@ -35,38 +35,39 @@ public class GlobalExceptionHandler implements WebExceptionHandler {
 
   @Override
   public Mono<Void> handle(ServerWebExchange exchange, Throwable ex) {
+    String path = exchange.getRequest().getPath().value();
     HttpStatus status;
     Map<String, Object> body;
 
     if (ex instanceof PromptValidationException pve) {
       log.warn("SECURITY | Prompt rejected | violations={}", pve.getViolations());
       status = HttpStatus.BAD_REQUEST;
-      body = errorBody(status, "Prompt validation failed", pve.getViolations());
+      body = errorBody(status, "Prompt validation failed", path, pve.getViolations());
 
     } else if (ex instanceof InvalidRequestException) {
       log.warn("Bad request | {}", ex.getMessage());
       status = HttpStatus.BAD_REQUEST;
-      body = errorBody(status, ex.getMessage(), List.of());
+      body = errorBody(status, ex.getMessage(), path, List.of());
 
     } else if (ex instanceof LLMProviderNotSupportedException lpe) {
       log.warn("Unknown provider '{}' | {}", lpe.getProvider(), ex.getMessage());
       status = HttpStatus.BAD_REQUEST;
-      body = errorBody(status, ex.getMessage(), List.of());
+      body = errorBody(status, ex.getMessage(), path, List.of());
 
     } else if (ex instanceof java.util.concurrent.TimeoutException) {
       log.warn("Request timed out | {}", ex.getMessage());
       status = HttpStatus.GATEWAY_TIMEOUT;
-      body = errorBody(status, "Request timed out", List.of());
+      body = errorBody(status, "Request timed out", path, List.of());
 
     } else if (ex instanceof LlmGatewayInternalException) {
       log.error("Internal gateway error", ex);
       status = HttpStatus.INTERNAL_SERVER_ERROR;
-      body = errorBody(status, "An internal error occurred. Please try again.", List.of());
+      body = errorBody(status, "An internal error occurred. Please try again.", path, List.of());
 
     } else {
       log.error("Unhandled exception", ex);
       status = HttpStatus.INTERNAL_SERVER_ERROR;
-      body = errorBody(status, "An internal error occurred. Please try again.", List.of());
+      body = errorBody(status, "An internal error occurred. Please try again.", path, List.of());
     }
 
     exchange.getResponse().setStatusCode(status);
@@ -81,13 +82,16 @@ public class GlobalExceptionHandler implements WebExceptionHandler {
     }
   }
 
-  private static Map<String, Object> errorBody(HttpStatus status, String message, List<?> details) {
+  private static Map<String, Object> errorBody(HttpStatus status, String message, String path, List<?> details) {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("status", status.value());
     body.put("error", status.getReasonPhrase());
     body.put("message", message);
-    body.put("details", details);
-    body.put("timestamp", Instant.now().toEpochMilli());
+    body.put("timestamp", Instant.now().toString());
+    body.put("path", path);
+    if (details != null && !details.isEmpty()) {
+      body.put("details", details);
+    }
     return body;
   }
 }

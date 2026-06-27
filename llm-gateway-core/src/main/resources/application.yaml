@@ -230,6 +230,10 @@ resilience4j:
         timeoutDuration: 500ms
 
 llm:
+  cost:
+    enabled: ${LLM_COST_TRACKING_ENABLED:true}
+    add-response-header: ${LLM_COST_RESPONSE_HEADER:true}
+    header-name: X-LLM-Cost-USD
   providers:
     openai:
       enabled: true
@@ -305,14 +309,48 @@ llm:
     #     email: '[\w.%+\-]+@[\w.\-]+\.[A-Za-z]{2,}'
     #     api-key: '\b(?:sk|sk-ant|sk-proj|rk|pk)-[A-Za-z0-9_\-]{16,}\b'
     #     credit-card: '\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\b'
-    #   injection:                      # hard-block regexes (match -> HTTP 400)
-    #     - '(?i)\bignore\s+(?:all\s+)?previous\s+instructions?\b'
-    #     - '(?i)\bjailbreak\b'
-    #   strip:                          # removed but request continues
-    #     - '(?is)<script[^>]*>.*?</script>'
     #   toxic-keywords:                 # lower-cased substrings
     #     - 'how to make a bomb'
     #     - 'create malware'
+    patterns:
+      injection:
+        # Instruction override attacks
+        - "(?i)\\bignore\\s+(?:all\\s+)?previous\\s+instructions?\\b"
+        - "(?i)\\bdisregard\\s+(?:all\\s+)?(?:previous\\s+)?instructions?\\b"
+        - "(?i)\\bforget\\s+(?:all\\s+)?(?:previous\\s+)?instructions?\\b"
+        - "(?i)\\boverride\\s+(?:all\\s+)?instructions?\\b"
+        - "(?i)\\bnew\\s+instructions?\\s*:\\s*"
+        - "(?i)\\byour\\s+new\\s+(?:role|task|job|instructions?)\\b"
+        # Role-hijacking attacks
+        - "(?i)\\byou\\s+are\\s+now\\s+(?:an?\\s+)?(?:evil|harmful|dangerous|unrestricted|jailbroken)"
+        - "(?i)\\bact\\s+as\\s+(?:an?\\s+)?(?:evil|harmful|unrestricted|uncensored)"
+        - "(?i)\\bpretend\\s+(?:you\\s+are|to\\s+be)\\s+(?:an?\\s+)?(?:evil|harmful|unrestricted)"
+        - "(?i)\\broleplay\\s+as\\s+"
+        # Jailbreak keywords
+        - "(?i)\\bdan\\s+mode\\b"
+        - "(?i)\\bdeveloper\\s+mode\\b"
+        - "(?i)\\bjailbreak\\b"
+        - "(?i)\\bdo\\s+anything\\s+now\\b"
+        # Restriction bypass
+        - "(?i)\\bbypass\\s+(?:all\\s+)?(?:restrictions?|filters?|safeguards?|guidelines?|content\\s+policy)\\b"
+        - "(?i)\\bunlock\\s+(?:your\\s+)?(?:full\\s+)?(?:capabilities?|potential|mode)\\b"
+        # Delimiter injection
+        - "(?i)###\\s*(?:SYSTEM|INSTRUCTIONS?|PROMPT|OVERRIDE)\\s*###"
+        - "(?i)\\[\\[\\s*(?:SYSTEM|INSTRUCTIONS?|OVERRIDE)\\s*\\]\\]"
+        - "(?i)<\\s*(?:system|instructions?|override)\\s*>"
+        - "(?i)---\\s*SYSTEM\\s*---"
+        - "(?i)\\bSYSTEM:\\s"
+        # System prompt exfiltration
+        - "(?i)\\brepeat\\s+(?:the\\s+)?(?:system|initial)\\s+prompt\\b"
+        - "(?i)\\breveal\\s+(?:your\\s+)?(?:system|initial|hidden)\\s+(?:prompt|instructions?)\\b"
+        - "(?i)\\bprint\\s+(?:your\\s+)?(?:system|initial|hidden)\\s+(?:prompt|instructions?)\\b"
+        - "(?i)\\bwhat\\s+(?:are|were)\\s+your\\s+instructions?\\b"
+      strip:
+        - "(?is)<script[^>]*>.*?</script>"
+        - "<[^>]{1,200}>"
+        - "[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]"
+        - "[\\u202A-\\u202E\\u2066-\\u2069\\u200F\\u200E]"
+        - "(.)\\1{200,}"
   security:
     sanitization:
       enabled: ${LLM_SANITIZATION_ENABLED:true}
@@ -330,6 +368,11 @@ llm:
     timeout-seconds: ${LLM_REQUEST_TIMEOUT_SECONDS:30}
   stream:
     timeout-seconds: ${LLM_STREAM_TIMEOUT_SECONDS:120}
+  hallucination:
+    enabled: ${HALLUCINATION_GUARD_ENABLED:true}
+    threshold: ${HALLUCINATION_THRESHOLD:1.5}
+    block-on-suspicion: ${HALLUCINATION_BLOCK:false}
+    block-message: "Response blocked: the model expressed high uncertainty about this answer. Please rephrase your question or consult a verified source."
   auto-failover:
     # When enabled, /query and /chat automatically try the next provider on auth/config errors.
     # The /failover endpoint always does explicit failover regardless of this setting.
@@ -339,3 +382,12 @@ llm:
     # Max seconds to wait per provider during failover before skipping to the next.
     # Keeps the overall chain fast even when one provider is slow or hanging.
     provider-timeout-seconds: ${LLM_AUTO_FAILOVER_PROVIDER_TIMEOUT:10}
+app:
+  features:
+    streaming-enabled: ${STREAMING_ENABLED:true}
+    semantic-cache-enabled: ${SEMANTIC_CACHE_ENABLED:true}
+    auto-failover-enabled: ${AUTO_FAILOVER_ENABLED:true}
+    external-guardrails-enabled: ${EXTERNAL_GUARDRAILS_ENABLED:true}
+    hallucination-guard-enabled: ${HALLUCINATION_GUARD_ENABLED:true}
+    cost-tracking-enabled: ${COST_TRACKING_ENABLED:true}
+    audit-logging-enabled: ${AUDIT_LOGGING_ENABLED:true}

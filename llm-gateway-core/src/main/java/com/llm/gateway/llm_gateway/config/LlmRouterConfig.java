@@ -33,8 +33,8 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 @Configuration
 public class LlmRouterConfig {
 
-  @RouterOperations({
     @RouterOperation(
+  @RouterOperations({
         path = "/health",
         method = RequestMethod.GET,
         beanClass = LlmHandler.class,

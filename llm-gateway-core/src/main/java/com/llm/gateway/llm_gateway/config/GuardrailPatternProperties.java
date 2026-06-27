@@ -19,9 +19,9 @@ import org.springframework.stereotype.Component;
  * <p>Consumed by {@code SensitiveDataRedactor}, {@code PromptSanitizer} and {@code
  * ToxicityFilterAdvisor}.
  */
+@Data
 @Component
 @ConfigurationProperties(prefix = "llm.guardrails.patterns")
-@Data
 public class GuardrailPatternProperties {
 
   /**

@@ -32,8 +32,8 @@ import reactor.core.publisher.Mono;
  * <p>Disable in tests via: gateway.rate-limiter.enabled=false
  */
 @Slf4j
-@Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
+@Component
 @ConditionalOnProperty(
     name = "gateway.rate-limiter.enabled",
     havingValue = "true",

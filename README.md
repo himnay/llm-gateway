@@ -873,9 +873,30 @@ configuration — no recompile:
 | `llm.guardrails.patterns.toxic-keywords` | `ToxicityFilterAdvisor` | list of substrings  |
 
 Sensible, fail-safe defaults ship in code (so protection is never accidentally
-disabled); any value you set in YAML **replaces** that category. See the commented
-example block under `llm.guardrails.patterns` in `application.yaml`. Invalid regexes are
-logged and skipped at startup rather than crashing the app.
+disabled); any value you set in YAML **replaces** that category. The active injection
+and strip pattern lists are explicitly declared under `llm.guardrails.patterns` in
+`application.yaml` — covering instruction-override attacks, role-hijacking, jailbreak
+keywords, restriction bypass, delimiter injection, and system prompt exfiltration. Invalid
+regexes are logged and skipped at startup rather than crashing the app.
+
+To add a new injection pattern without changing code:
+
+```yaml
+llm:
+  guardrails:
+    patterns:
+      injection:
+        - "(?i)your new pattern here"
+```
+
+To disable the guard entirely for testing:
+
+```yaml
+llm:
+  security:
+    sanitization:
+      enabled: false
+```
 
 ---
 
@@ -998,6 +1019,36 @@ percentiles, token usage, errors, circuit-breaker state, and JVM/system health.
 
 Every request creates an OTEL span `llm.request`. Trace and span IDs appear in every log line via MDC. Structured extraction creates a separate `llm.structured` span.
 
+### HallucinationMonitorAdvisor
+
+`HallucinationMonitorAdvisor` is advisor step ⑧ in the Spring AI chain. It scores the model's response for uncertainty signals (hedging phrases, contradictions, vague references) and records the score as a Micrometer gauge. Behavior is controlled by two properties:
+
+| Env Var | Property | Default | Description |
+|---|---|---|---|
+| `HALLUCINATION_THRESHOLD` | `llm.guardrails.hallucination.threshold` | `0.7` | Suspicion score (0.0–1.0) above which the response is flagged |
+| `HALLUCINATION_BLOCK` | `llm.guardrails.hallucination.block-on-suspicion` | `false` | When `true`, responses that exceed the threshold are rejected with HTTP 422 instead of being returned |
+| `INJECTION_GUARD_ENABLED` | `llm.guardrails.injection-guard.enabled` | `true` | Master switch for prompt-injection regex patterns in the Level-1 `prompt-sanitization` guardrail step |
+
+When `block-on-suspicion=false` (default), the advisor logs a `WARN` and increments `llm_hallucination_suspects_total` but still returns the response to the caller — useful for monitoring before enforcement. Set `block-on-suspicion=true` in production environments where factual accuracy is critical.
+
+### Cost Tracking (`TokenCostService`)
+
+`TokenCostService` estimates the USD cost of every LLM call from the prompt and completion token counts in the model's usage metadata, using a per-model rate table configured under `llm.cost.rates.*`. The estimated cost is:
+
+- Added as the `X-LLM-Cost-USD` response header on every `/query`, `/chat`, and `/failover` response
+- Logged at `INFO` level alongside provider, model, and token counts
+- Recorded as the Micrometer counter `llm_cost_usd_total{provider, model}` for Grafana dashboards
+
+To add or update a model's rate:
+
+```yaml
+llm:
+  cost:
+    rates:
+      gpt-4o: 0.000005          # USD per token (prompt rate; completion rate = 2x by default)
+      claude-3-5-sonnet: 0.000003
+```
+
 ### Actuator endpoints
 
 | Endpoint                              | Description                                           |
@@ -1020,6 +1071,21 @@ livenessProbe:
   httpGet: { path: /llm/v1/actuator/health/liveness, port: 8080 }
   initialDelaySeconds: 20
 ```
+
+---
+
+## Feature Flags
+
+Runtime feature flags under `app.features.*` allow individual gateway capabilities to be toggled without a code change or redeployment. Each flag has a matching environment variable.
+
+| Property | Env Var | Default | Description |
+|---|---|---|---|
+| `app.features.failover-enabled` | `FAILOVER_ENABLED` | `true` | Enable the `/failover` and auto-failover chain |
+| `app.features.streaming-enabled` | `STREAMING_ENABLED` | `true` | Enable `/{provider}/stream` SSE endpoints |
+| `app.features.embedding-enabled` | `EMBEDDING_ENABLED` | `true` | Enable `POST /embed` vector embedding endpoint |
+| `app.features.structured-output-enabled` | `STRUCTURED_OUTPUT_ENABLED` | `true` | Enable `/openai/extract` structured output endpoint |
+| `app.features.audit-log-enabled` | `AUDIT_LOG_ENABLED` | `true` | Write every request to the `request_log` PostgreSQL table |
+| `app.features.cost-tracking-enabled` | `COST_TRACKING_ENABLED` | `true` | Compute and attach `X-LLM-Cost-USD` header via `TokenCostService` |
 
 ---
 

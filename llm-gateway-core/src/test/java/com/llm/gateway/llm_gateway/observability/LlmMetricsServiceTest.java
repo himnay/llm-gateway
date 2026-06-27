@@ -29,8 +29,8 @@ class LlmMetricsServiceTest {
 
   // ── recordProviderError ───────────────────────────────────────────────────
 
-  @DisplayName("recordProviderError increments llm.provider.error.total with correct tags")
   @Test
+  @DisplayName("recordProviderError increments llm.provider.error.total with correct tags")
   void recordProviderError_incrementsCounter() {
     metrics.recordProviderError("openai", "TIMEOUT");
     metrics.recordProviderError("openai", "TIMEOUT");
@@ -57,8 +57,8 @@ class LlmMetricsServiceTest {
 
   // ── recordFailover ────────────────────────────────────────────────────────
 
-  @DisplayName("recordFailover increments llm.provider.failover.total with from/to tags")
   @Test
+  @DisplayName("recordFailover increments llm.provider.failover.total with from/to tags")
   void recordFailover_incrementsCounter() {
     metrics.recordFailover("openai", "anthropic");
     metrics.recordFailover("openai", "anthropic");
@@ -85,8 +85,8 @@ class LlmMetricsServiceTest {
 
   // ── recordTokenUsage (simplified signature) ───────────────────────────────
 
-  @DisplayName("recordTokenUsage registers prompt and completion counters")
   @Test
+  @DisplayName("recordTokenUsage registers prompt and completion counters")
   void recordTokenUsage_registersPromptAndCompletionCounters() {
     metrics.recordTokenUsage("openai", 150, 300);
 
@@ -105,8 +105,8 @@ class LlmMetricsServiceTest {
     assertThat(completionCounter.count()).isEqualTo(300.0);
   }
 
-  @DisplayName("recordTokenUsage skips zero token counts")
   @Test
+  @DisplayName("recordTokenUsage skips zero token counts")
   void recordTokenUsage_skipsZeroCounts() {
     metrics.recordTokenUsage("ollama", 0, 0);
 
@@ -118,8 +118,8 @@ class LlmMetricsServiceTest {
 
   // ── recordGuardrailRejection ──────────────────────────────────────────────
 
-  @DisplayName("recordGuardrailRejection increments llm.guardrail.rejection.total with reason tag")
   @Test
+  @DisplayName("recordGuardrailRejection increments llm.guardrail.rejection.total with reason tag")
   void recordGuardrailRejection_incrementsCounter() {
     metrics.recordGuardrailRejection("PROMPT_INJECTION");
     metrics.recordGuardrailRejection("PROMPT_INJECTION");

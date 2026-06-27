@@ -66,13 +66,13 @@ public class LlmGatewayFacade {
   private final RequestLogService requestLogService;
   private final ProviderRateLimitProperties providerRateLimitProperties;
 
-  @Autowired(required = false)
   @Nullable
+  @Autowired(required = false)
   private Tracer tracer;
 
   // Injected directly for structured-output extraction (OpenAI-only feature)
-  @Autowired(required = false)
   @Nullable
+  @Autowired(required = false)
   private OpenAiService openAiService;
 
   @Value("${llm.auto-failover.enabled:true}")

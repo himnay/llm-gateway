@@ -29,8 +29,8 @@ class OpenRouterControllerTest {
         .build();
   }
 
-  @DisplayName("POST /chat returns the service response with an echoed X-Request-ID")
   @Test
+  @DisplayName("POST /chat returns the service response with an echoed X-Request-ID")
   void chatReturnsServiceResponse() {
     when(openRouterService.chat(any()))
         .thenReturn(
@@ -57,8 +57,8 @@ class OpenRouterControllerTest {
                 org.assertj.core.api.Assertions.assertThat(body.getContent()).isEqualTo("Hello!"));
   }
 
-  @DisplayName("POST /chat with a blank prompt returns 400")
   @Test
+  @DisplayName("POST /chat with a blank prompt returns 400")
   void chatRejectsBlankPrompt() {
     client()
         .post()

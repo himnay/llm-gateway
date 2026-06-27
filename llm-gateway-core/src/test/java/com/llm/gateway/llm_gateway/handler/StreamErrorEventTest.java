@@ -18,8 +18,8 @@ class StreamErrorEventTest {
 
   private final ObjectMapper objectMapper = new ObjectMapper();
 
-  @DisplayName("StreamErrorEvent serialises to JSON with all required fields")
   @Test
+  @DisplayName("StreamErrorEvent serialises to JSON with all required fields")
   void streamErrorEvent_serialisesToJson() throws Exception {
     LlmStreamHandler.StreamErrorEvent event =
         new LlmStreamHandler.StreamErrorEvent(
@@ -34,8 +34,8 @@ class StreamErrorEventTest {
     assertThat(node.get("requestId").asText()).isEqualTo("req-abc-123");
   }
 
-  @DisplayName("StreamErrorEvent JSON contains exactly the four expected fields")
   @Test
+  @DisplayName("StreamErrorEvent JSON contains exactly the four expected fields")
   void streamErrorEvent_hasExactlyFourFields() throws Exception {
     LlmStreamHandler.StreamErrorEvent event =
         new LlmStreamHandler.StreamErrorEvent(
@@ -50,8 +50,8 @@ class StreamErrorEventTest {
         .containsExactlyInAnyOrder("type", "code", "message", "requestId");
   }
 
-  @DisplayName("StreamErrorEvent type field is always 'error'")
   @Test
+  @DisplayName("StreamErrorEvent type field is always 'error'")
   void streamErrorEvent_typeIsAlwaysError() throws Exception {
     LlmStreamHandler.StreamErrorEvent event =
         new LlmStreamHandler.StreamErrorEvent(

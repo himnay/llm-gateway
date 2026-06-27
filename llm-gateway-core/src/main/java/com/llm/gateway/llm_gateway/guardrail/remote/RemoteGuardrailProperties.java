@@ -8,9 +8,9 @@ import org.springframework.stereotype.Component;
  * Configuration for the external LangChain guardrails sidecar (bound from {@code
  * llm.guardrails.external.*}).
  */
+@Data
 @Component
 @ConfigurationProperties(prefix = "llm.guardrails.external")
-@Data
 public class RemoteGuardrailProperties {
 
   /** Master switch — when false the gateway never calls the sidecar. */

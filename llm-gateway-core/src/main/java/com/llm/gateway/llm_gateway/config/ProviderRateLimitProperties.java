@@ -27,8 +27,8 @@ import org.springframework.stereotype.Component;
  *         tokens-per-minute: 100000
  * </pre>
  */
-@Slf4j
 @Data
+@Slf4j
 @Component
 @ConfigurationProperties(prefix = "gateway.provider-rate-limits")
 public class ProviderRateLimitProperties {

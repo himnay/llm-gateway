@@ -1,6 +1,8 @@
 package com.llm.gateway.llm_gateway.handler;
 
 import com.llm.gateway.llm_gateway.config.LlmProviderProperties;
+import com.llm.gateway.llm_gateway.cost.CostTrackingProperties;
+import com.llm.gateway.llm_gateway.cost.TokenCostService;
 import com.llm.gateway.llm_gateway.dto.LlmProvider;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
@@ -38,6 +40,8 @@ public class LlmHandler {
   private final StringRedisTemplate redisTemplate;
   private final ChatMemoryRepository chatMemoryRepository;
   private final LlmProviderProperties providerProperties;
+  private final TokenCostService tokenCostService;
+  private final CostTrackingProperties costTrackingProperties;
 
   @Value("${llm.request.timeout-seconds:30}")
   private int timeoutSeconds;
@@ -296,6 +300,29 @@ public class LlmHandler {
         .contentType(MediaType.APPLICATION_JSON)
         .header("X-Request-ID", correlationId)
         .bodyValue(body);
+  }
+
+  /** Overload for {@link LlmResponse}: adds the {@code X-LLM-Cost-USD} header when cost tracking is enabled. */
+  private Mono<ServerResponse> ok(LlmResponse resp, String correlationId) {
+    ServerResponse.BodyBuilder builder = ServerResponse.ok()
+        .contentType(MediaType.APPLICATION_JSON)
+        .header("X-Request-ID", correlationId);
+
+    if (costTrackingProperties.isEnabled() && resp.getModel() != null) {
+      int inputTokens  = resp.getPromptTokens()     != null ? resp.getPromptTokens()     : 0;
+      int outputTokens = resp.getCompletionTokens() != null ? resp.getCompletionTokens() : 0;
+      TokenCostService.CostSummary summary =
+          tokenCostService.summarize(resp.getModel(), inputTokens, outputTokens);
+      log.debug("COST | model={} inputTokens={} outputTokens={} estimatedCostUsd={}",
+          resp.getModel(), inputTokens, outputTokens,
+          String.format("%.6f", summary.estimatedCostUsd()));
+      if (costTrackingProperties.isAddResponseHeader()) {
+        builder = builder.header(costTrackingProperties.getHeaderName(),
+            String.format("%.6f", summary.estimatedCostUsd()));
+      }
+    }
+
+    return builder.bodyValue(resp);
   }
 
   private Mono<ServerResponse> errorResponse(Throwable ex) {

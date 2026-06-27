@@ -32,8 +32,8 @@ import reactor.util.context.Context;
  * Runs at {@link Ordered#HIGHEST_PRECEDENCE} so the ID is available before any other filter
  * (including the Redis rate-limiter) executes.
  */
-@Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
+@Component
 public class CorrelationIdFilter implements WebFilter {
 
   public static final String HEADER = "X-Request-ID";

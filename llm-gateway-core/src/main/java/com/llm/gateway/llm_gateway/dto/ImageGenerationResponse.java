@@ -14,9 +14,9 @@ import lombok.NoArgsConstructor;
  */
 @Data
 @Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @NoArgsConstructor
 @AllArgsConstructor
-@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ImageGenerationResponse {
 
   private String model;
