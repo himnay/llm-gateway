@@ -2,6 +2,7 @@ package com.llm.gateway.llm_gateway.facade;
 
 import com.llm.gateway.llm_gateway.audit.RequestLogService;
 import com.llm.gateway.llm_gateway.cache.PromptCacheService;
+import com.llm.gateway.llm_gateway.config.FeatureFlagProperties;
 import com.llm.gateway.llm_gateway.config.ProviderRateLimitProperties;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
@@ -69,6 +70,7 @@ public class LlmGatewayFacade {
   private final RequestLogService requestLogService;
   private final ProviderRateLimitProperties providerRateLimitProperties;
   private final CircuitBreakerRegistry circuitBreakerRegistry;
+  private final FeatureFlagProperties featureFlags;
 
   @Nullable
   @Autowired(required = false)
@@ -78,9 +80,6 @@ public class LlmGatewayFacade {
   @Nullable
   @Autowired(required = false)
   private OpenAiService openAiService;
-
-  @Value("${llm.auto-failover.enabled:true}")
-  private boolean autoFailoverEnabled;
 
   @Value("${llm.auto-failover.order:openai,anthropic,google,cohere,huggingface,ollama}")
   private String autoFailoverOrderRaw;
@@ -105,7 +104,8 @@ public class LlmGatewayFacade {
       ObservationRegistry observationRegistry,
       RequestLogService requestLogService,
       ProviderRateLimitProperties providerRateLimitProperties,
-      CircuitBreakerRegistry circuitBreakerRegistry) {
+      CircuitBreakerRegistry circuitBreakerRegistry,
+      FeatureFlagProperties featureFlags) {
     this.providerRegistry = providerRegistry;
     this.guardrailChain = guardrailChain;
     this.cacheService = cacheService;
@@ -117,6 +117,7 @@ public class LlmGatewayFacade {
     this.requestLogService = requestLogService;
     this.providerRateLimitProperties = providerRateLimitProperties;
     this.circuitBreakerRegistry = circuitBreakerRegistry;
+    this.featureFlags = featureFlags;
   }
 
   @Timed(
@@ -265,7 +266,8 @@ public class LlmGatewayFacade {
       }
 
       // ── 7c. Optional output validation via the remote guardrails service ──
-      if (remoteGuardrailProperties.isEnabled()
+      if (featureFlags.isExternalGuardrailsEnabled()
+          && remoteGuardrailProperties.isEnabled()
           && remoteGuardrailProperties.isValidateOutput()
           && response.getError() == null) {
         validateResponseContent(provider, reqId, response);
@@ -281,19 +283,23 @@ public class LlmGatewayFacade {
       metricsService.recordLatency(provider, response.getLatencyMs());
       metricsService.recordProviderCall(
           provider, response.getModel(), response.getError() != null ? "error" : "success");
-      metricsService.recordTokenUsage(
-          provider,
-          response.getModel(),
-          response.getPromptTokens(),
-          response.getCompletionTokens(),
-          response.getTotalTokens());
+      if (featureFlags.isCostTrackingEnabled()) {
+        metricsService.recordTokenUsage(
+            provider,
+            response.getModel(),
+            response.getPromptTokens(),
+            response.getCompletionTokens(),
+            response.getTotalTokens());
+      }
       if (response.getError() != null) {
         metricsService.recordError(provider, "LLM_ERROR");
       }
 
       // ── 10. Fire-and-forget audit log ─────────────────────────────────
-      requestLogService.log(reqId, request.getClientId(), request, response)
-          .subscribe(null, ex -> log.warn("AUDIT | subscribe error | {}", ex.getMessage()));
+      if (featureFlags.isAuditLoggingEnabled()) {
+        requestLogService.log(reqId, request.getClientId(), request, response)
+            .subscribe(null, ex -> log.warn("AUDIT | subscribe error | {}", ex.getMessage()));
+      }
 
       return response;
 
@@ -370,7 +376,7 @@ public class LlmGatewayFacade {
         failoverNeeded = true;
       }
     } catch (Exception ex) {
-      if (!autoFailoverEnabled || !isFailoverWorthy(ex)) {
+      if (!featureFlags.isAutoFailoverEnabled() || !isFailoverWorthy(ex)) {
         throw ex;
       }
       log.warn(
@@ -382,7 +388,7 @@ public class LlmGatewayFacade {
       failoverNeeded = true;
     }
 
-    if (!autoFailoverEnabled || !failoverNeeded) {
+    if (!featureFlags.isAutoFailoverEnabled() || !failoverNeeded) {
       return primaryResponse;
     }
 

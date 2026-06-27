@@ -2,6 +2,7 @@ package com.llm.gateway.llm_gateway.handler;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.llm.gateway.llm_gateway.config.FeatureFlagProperties;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.exception.LLMProviderNotSupportedException;
 import com.llm.gateway.llm_gateway.facade.LlmProviderRegistry;
@@ -47,11 +48,17 @@ public class LlmStreamHandler {
   private final GuardrailChain guardrailChain;
   private final PromptSanitizer promptSanitizer;
   private final ObjectMapper objectMapper;
+  private final FeatureFlagProperties featureFlags;
 
   @Value("${llm.stream.timeout-seconds:120}")
   private int streamTimeoutSeconds;
 
   public Mono<ServerResponse> stream(ServerRequest req) {
+    if (!featureFlags.isStreamingEnabled()) {
+      return ServerResponse.status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
+          .bodyValue(Map.of("error", "Streaming is currently disabled."));
+    }
+
     String provider = req.pathVariable("provider");
     String cid = correlationId(req);
 

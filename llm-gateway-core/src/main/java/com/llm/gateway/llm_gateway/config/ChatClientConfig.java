@@ -6,11 +6,14 @@ import com.llm.gateway.llm_gateway.guardrail.PiiRedactionAdvisor;
 import com.llm.gateway.llm_gateway.guardrail.ResponseFormatAdvisor;
 import com.llm.gateway.llm_gateway.guardrail.TopicFilterAdvisor;
 import com.llm.gateway.llm_gateway.guardrail.ToxicityFilterAdvisor;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
+import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
@@ -45,6 +48,7 @@ public class ChatClientConfig {
   private final ResponseFormatAdvisor responseFormat;
   private final HallucinationMonitorAdvisor hallucinationMonitor;
   private final ChatMemory chatMemory;
+  private final FeatureFlagProperties featureFlags;
 
   @Bean("openAiChatClient")
   @Primary
@@ -62,16 +66,18 @@ public class ChatClientConfig {
     return ChatClient.builder(model).defaultAdvisors(standardAdvisors()).build();
   }
 
-  private org.springframework.ai.chat.client.advisor.api.Advisor[] standardAdvisors() {
-    return new org.springframework.ai.chat.client.advisor.api.Advisor[] {
-      toxicityFilter,
-      piiRedaction,
-      topicFilter,
-      metrics,
-      MessageChatMemoryAdvisor.builder(chatMemory).build(),
-      new SimpleLoggerAdvisor(),
-      responseFormat,
-      hallucinationMonitor
-    };
+  private Advisor[] standardAdvisors() {
+    List<Advisor> advisors = new ArrayList<>();
+    advisors.add(toxicityFilter);
+    advisors.add(piiRedaction);
+    advisors.add(topicFilter);
+    advisors.add(metrics);
+    advisors.add(MessageChatMemoryAdvisor.builder(chatMemory).build());
+    advisors.add(new SimpleLoggerAdvisor());
+    advisors.add(responseFormat);
+    if (featureFlags.isHallucinationGuardEnabled()) {
+      advisors.add(hallucinationMonitor);
+    }
+    return advisors.toArray(new Advisor[0]);
   }
 }
