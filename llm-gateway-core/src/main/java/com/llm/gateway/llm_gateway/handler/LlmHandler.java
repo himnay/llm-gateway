@@ -25,11 +25,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 
 @Slf4j
 @Component
@@ -56,6 +58,7 @@ public class LlmHandler {
               r.setCorrelationId(cid);
               validate(r);
             })
+        .flatMap(LlmHandler::enrichWithClientId)
         .flatMap(
             request -> {
               String provider =
@@ -271,6 +274,19 @@ public class LlmHandler {
         .subscribeOn(Schedulers.boundedElastic())
         .then(ServerResponse.noContent().build())
         .onErrorResume(this::errorResponse);
+  }
+
+  /** Extracts the JWT subject from the reactive security context and sets it on the request. */
+  private static Mono<LlmRequest> enrichWithClientId(LlmRequest request) {
+    return ReactiveSecurityContextHolder.getContext()
+        .map(ctx -> ctx.getAuthentication())
+        .filter(auth -> auth instanceof JwtAuthenticationToken)
+        .cast(JwtAuthenticationToken.class)
+        .map(jwt -> {
+          request.setClientId(jwt.getToken().getSubject());
+          return request;
+        })
+        .defaultIfEmpty(request);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

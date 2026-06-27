@@ -31,10 +31,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -134,13 +135,15 @@ public class LlmGatewayFacade {
     if (request.getSessionId() != null) MDC.put("sessionId", request.getSessionId());
 
     try {
-      // ── 0. Per-provider rate limit advisory check ─────────────────────
+      // ── 0. Per-provider rate limit check — enforced, returns 429 ─────
       if (!providerRateLimitProperties.checkAndIncrementRequest(provider)) {
+        metricsService.recordRejectedRequest(provider, "PROVIDER_RATE_LIMIT");
         log.warn(
             "RATE_LIMIT | per-provider request limit exceeded | provider={} | requestId={}",
             provider,
             reqId);
-        metricsService.recordRejectedRequest(provider, "PROVIDER_RATE_LIMIT");
+        return errorResponse(provider,
+            "Rate limit exceeded for provider '" + provider + "'. Retry after the current minute window.");
       }
 
       // ── 1. Resolve provider ───────────────────────────────────────────
@@ -267,7 +270,8 @@ public class LlmGatewayFacade {
       }
 
       // ── 10. Fire-and-forget audit log ─────────────────────────────────
-      requestLogService.log(reqId, null, request, response).subscribe();
+      requestLogService.log(reqId, request.getClientId(), request, response)
+          .subscribe(null, ex -> log.warn("AUDIT | subscribe error | {}", ex.getMessage()));
 
       return response;
 
@@ -375,7 +379,9 @@ public class LlmGatewayFacade {
           "AUTO_FAILOVER | trying provider={} (timeout={}s)", candidate, providerTimeoutSeconds);
       try {
         LlmResponse candidateResponse =
-            CompletableFuture.supplyAsync(() -> execute(candidate, request))
+            Mono.fromCallable(() -> execute(candidate, request))
+                .subscribeOn(Schedulers.boundedElastic())
+                .toFuture()
                 .get(providerTimeoutSeconds, TimeUnit.SECONDS);
 
         if (candidateResponse == null) continue;

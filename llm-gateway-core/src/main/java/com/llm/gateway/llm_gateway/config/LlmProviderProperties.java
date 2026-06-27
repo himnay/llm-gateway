@@ -16,6 +16,7 @@ public class LlmProviderProperties {
   @Data
   public static class ProviderConfig {
     private boolean enabled;
+    @lombok.ToString.Exclude
     private String apiKey;
     private String apiUrl;
     private String model;

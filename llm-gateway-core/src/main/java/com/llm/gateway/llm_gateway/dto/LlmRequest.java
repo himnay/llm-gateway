@@ -1,5 +1,6 @@
 package com.llm.gateway.llm_gateway.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +58,13 @@ public class LlmRequest {
    */
   @JsonProperty(value = "correlation_id", access = JsonProperty.Access.READ_ONLY)
   private String correlationId;
+
+  /**
+   * JWT subject (client identity) extracted from the security context by the handler.
+   * Never deserialized from the request body.
+   */
+  @JsonIgnore
+  private String clientId;
 
   /**
    * Optional citations from an upstream RAG call (e.g. llm-rag), supplied by the caller so the
