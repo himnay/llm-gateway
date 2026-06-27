@@ -21,7 +21,7 @@ import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
 /**
- * Sliding-window Redis rate limiter applied to all /llm/** requests.
+ * Fixed tumbling-window Redis rate limiter applied to all /llm/** requests.
  *
  * <p>Uses a per-client-IP counter in Redis with a fixed window keyed by epoch bucket. Fails open on
  * Redis errors so an unavailable Redis does not block LLM traffic.

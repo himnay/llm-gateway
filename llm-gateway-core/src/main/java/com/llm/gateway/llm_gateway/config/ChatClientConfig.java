@@ -49,46 +49,29 @@ public class ChatClientConfig {
   @Bean("openAiChatClient")
   @Primary
   public ChatClient openAiChatClient(OpenAiChatModel model) {
-    return ChatClient.builder(model)
-        .defaultAdvisors(
-            toxicityFilter,
-            piiRedaction,
-            topicFilter,
-            metrics,
-            MessageChatMemoryAdvisor.builder(chatMemory).build(),
-            new SimpleLoggerAdvisor(),
-            responseFormat,
-            hallucinationMonitor)
-        .build();
+    return ChatClient.builder(model).defaultAdvisors(standardAdvisors()).build();
   }
 
   @Bean("anthropicChatClient")
   public ChatClient anthropicChatClient(AnthropicChatModel model) {
-    return ChatClient.builder(model)
-        .defaultAdvisors(
-            toxicityFilter,
-            piiRedaction,
-            topicFilter,
-            metrics,
-            MessageChatMemoryAdvisor.builder(chatMemory).build(),
-            new SimpleLoggerAdvisor(),
-            responseFormat,
-            hallucinationMonitor)
-        .build();
+    return ChatClient.builder(model).defaultAdvisors(standardAdvisors()).build();
   }
 
   @Bean("ollamaChatClient")
   public ChatClient ollamaChatClient(OllamaChatModel model) {
-    return ChatClient.builder(model)
-        .defaultAdvisors(
-            toxicityFilter,
-            piiRedaction,
-            topicFilter,
-            metrics,
-            MessageChatMemoryAdvisor.builder(chatMemory).build(),
-            new SimpleLoggerAdvisor(),
-            responseFormat,
-            hallucinationMonitor)
-        .build();
+    return ChatClient.builder(model).defaultAdvisors(standardAdvisors()).build();
+  }
+
+  private org.springframework.ai.chat.client.advisor.api.Advisor[] standardAdvisors() {
+    return new org.springframework.ai.chat.client.advisor.api.Advisor[] {
+      toxicityFilter,
+      piiRedaction,
+      topicFilter,
+      metrics,
+      MessageChatMemoryAdvisor.builder(chatMemory).build(),
+      new SimpleLoggerAdvisor(),
+      responseFormat,
+      hallucinationMonitor
+    };
   }
 }

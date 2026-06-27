@@ -3,13 +3,12 @@ package com.llm.gateway.llm_gateway.handler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
+import com.llm.gateway.llm_gateway.exception.LLMProviderNotSupportedException;
+import com.llm.gateway.llm_gateway.facade.LlmProviderRegistry;
 import com.llm.gateway.llm_gateway.guardrail.chain.GuardrailChain;
 import com.llm.gateway.llm_gateway.guardrail.chain.GuardrailContext;
 import com.llm.gateway.llm_gateway.security.PromptSanitizer;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
-import com.llm.gateway.llm_gateway.service.AnthropicClaudeService;
-import com.llm.gateway.llm_gateway.service.OllamaService;
-import com.llm.gateway.llm_gateway.service.OpenAiService;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
@@ -44,9 +43,7 @@ public class LlmStreamHandler {
    */
   record StreamErrorEvent(String type, String code, String message, String requestId) {}
 
-  private final OpenAiService openAiService;
-  private final AnthropicClaudeService anthropicService;
-  private final OllamaService ollamaService;
+  private final LlmProviderRegistry providerRegistry;
   private final GuardrailChain guardrailChain;
   private final PromptSanitizer promptSanitizer;
   private final ObjectMapper objectMapper;
@@ -84,16 +81,13 @@ public class LlmStreamHandler {
                             validated.getSessionId(),
                             cid);
 
-                        Flux<String> tokens =
-                            switch (provider) {
-                              case "openai" -> openAiService.stream(validated);
-                              case "anthropic" -> anthropicService.stream(validated);
-                              case "ollama" -> ollamaService.stream(validated);
-                              default ->
-                                  Flux.error(
-                                      new IllegalArgumentException(
-                                          "Streaming not supported for provider: " + provider));
-                            };
+                        Flux<String> tokens;
+                        try {
+                          tokens = providerRegistry.resolve(provider).stream(validated);
+                        } catch (LLMProviderNotSupportedException | UnsupportedOperationException ex) {
+                          tokens = Flux.error(new IllegalArgumentException(
+                              "Streaming not supported for provider: " + provider));
+                        }
 
                         Flux<ServerSentEvent<String>> sseStream =
                             tokens

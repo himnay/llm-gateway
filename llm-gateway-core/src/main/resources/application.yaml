@@ -193,6 +193,17 @@ springdoc:
 
 resilience4j:
   circuitbreaker:
+    configs:
+      provider-default:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        recordExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.reactive.function.client.WebClientResponseException
     instances:
       llm-gateway:
         slidingWindowSize: 10
@@ -204,6 +215,18 @@ resilience4j:
           - java.io.IOException
           - java.util.concurrent.TimeoutException
           - org.springframework.web.reactive.function.client.WebClientResponseException
+      openai:
+        base-config: provider-default
+      anthropic:
+        base-config: provider-default
+      ollama:
+        base-config: provider-default
+      google:
+        base-config: provider-default
+      cohere:
+        base-config: provider-default
+      huggingface:
+        base-config: provider-default
       guardrails-service:         # Protects the LangChain guardrails sidecar call
         slidingWindowSize: 10
         failureRateThreshold: 50

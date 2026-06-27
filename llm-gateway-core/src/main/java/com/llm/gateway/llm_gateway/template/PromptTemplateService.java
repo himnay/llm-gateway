@@ -1,6 +1,7 @@
 package com.llm.gateway.llm_gateway.template;
 
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
+import jakarta.annotation.PostConstruct;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
@@ -31,6 +32,20 @@ public class PromptTemplateService {
   @Value("classpath:prompts/assistant-starter.st")
   private Resource assistantStarterTemplate;
 
+  private Map<String, PromptTemplate> templateCache;
+  private PromptTemplate assistantStarterCached;
+
+  @PostConstruct
+  void initTemplateCache() {
+    templateCache = Map.of(
+        "openai",    new PromptTemplate(openAiSystemTemplate),
+        "anthropic", new PromptTemplate(anthropicSystemTemplate),
+        "ollama",    new PromptTemplate(ollamaSystemTemplate),
+        "default",   new PromptTemplate(defaultSystemTemplate)
+    );
+    assistantStarterCached = new PromptTemplate(assistantStarterTemplate);
+  }
+
   /**
    * Returns the resolved system prompt for the given provider and request. Priority: 1. If
    * templateVars present → render per-provider .st template with merged vars. 2. If systemPrompt
@@ -49,7 +64,7 @@ public class PromptTemplateService {
     if (hasVars) {
       merged.putAll(vars);
     }
-    return new PromptTemplate(resolveSystemTemplate(provider)).render(merged).stripTrailing();
+    return resolveSystemTemplate(provider).render(merged).stripTrailing();
   }
 
   /**
@@ -64,18 +79,13 @@ public class PromptTemplateService {
     if (vars != null && vars.containsKey("starter")) {
       Map<String, Object> merged = defaultVars();
       merged.putAll(vars);
-      return new PromptTemplate(assistantStarterTemplate).render(merged).stripTrailing();
+      return assistantStarterCached.render(merged).stripTrailing();
     }
     return null;
   }
 
-  private Resource resolveSystemTemplate(String provider) {
-    return switch (provider.toLowerCase()) {
-      case "openai" -> openAiSystemTemplate;
-      case "anthropic" -> anthropicSystemTemplate;
-      case "ollama" -> ollamaSystemTemplate;
-      default -> defaultSystemTemplate;
-    };
+  private PromptTemplate resolveSystemTemplate(String provider) {
+    return templateCache.getOrDefault(provider.toLowerCase(), templateCache.get("default"));
   }
 
   private Map<String, Object> defaultVars() {

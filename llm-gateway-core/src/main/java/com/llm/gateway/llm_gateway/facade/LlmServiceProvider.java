@@ -2,6 +2,7 @@ package com.llm.gateway.llm_gateway.facade;
 
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.dto.LlmResponse;
+import reactor.core.publisher.Flux;
 
 /**
  * Facade SPI – every LLM provider service must implement this interface.
@@ -29,4 +30,12 @@ public interface LlmServiceProvider {
    * throw – errors must be captured inside the returned {@link LlmResponse#getError()} field.
    */
   LlmResponse execute(LlmRequest request);
+
+  /**
+   * Streaming variant — returns token chunks as a Flux. Only providers that support SSE streaming
+   * need to override this; the default throws {@link UnsupportedOperationException}.
+   */
+  default Flux<String> stream(LlmRequest request) {
+    throw new UnsupportedOperationException("Streaming not supported for provider: " + getProviderName());
+  }
 }

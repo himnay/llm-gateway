@@ -18,6 +18,8 @@ import com.llm.gateway.llm_gateway.observability.LlmMetricsService;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
 import com.llm.gateway.llm_gateway.security.SensitiveDataRedactor;
 import com.llm.gateway.llm_gateway.service.OpenAiService;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import io.micrometer.core.annotation.Timed;
@@ -66,6 +68,7 @@ public class LlmGatewayFacade {
   private final ObservationRegistry observationRegistry;
   private final RequestLogService requestLogService;
   private final ProviderRateLimitProperties providerRateLimitProperties;
+  private final CircuitBreakerRegistry circuitBreakerRegistry;
 
   @Nullable
   @Autowired(required = false)
@@ -101,7 +104,8 @@ public class LlmGatewayFacade {
       RemoteGuardrailProperties remoteGuardrailProperties,
       ObservationRegistry observationRegistry,
       RequestLogService requestLogService,
-      ProviderRateLimitProperties providerRateLimitProperties) {
+      ProviderRateLimitProperties providerRateLimitProperties,
+      CircuitBreakerRegistry circuitBreakerRegistry) {
     this.providerRegistry = providerRegistry;
     this.guardrailChain = guardrailChain;
     this.cacheService = cacheService;
@@ -112,6 +116,7 @@ public class LlmGatewayFacade {
     this.observationRegistry = observationRegistry;
     this.requestLogService = requestLogService;
     this.providerRateLimitProperties = providerRateLimitProperties;
+    this.circuitBreakerRegistry = circuitBreakerRegistry;
   }
 
   @Timed(
@@ -144,6 +149,16 @@ public class LlmGatewayFacade {
             reqId);
         return errorResponse(provider,
             "Rate limit exceeded for provider '" + provider + "'. Retry after the current minute window.");
+      }
+
+      // ── 0b. Per-provider circuit breaker check ────────────────────────
+      io.github.resilience4j.circuitbreaker.CircuitBreaker perProviderCb =
+          circuitBreakerRegistry.circuitBreaker(provider);
+      if (!perProviderCb.tryAcquirePermission()) {
+        metricsService.recordError(provider, "PER_PROVIDER_CIRCUIT_OPEN");
+        log.warn("CIRCUIT_OPEN | per-provider circuit open | provider={} | requestId={}", provider, reqId);
+        return errorResponse(provider,
+            "Provider '" + provider + "' circuit is open. Please retry later.");
       }
 
       // ── 1. Resolve provider ───────────────────────────────────────────
@@ -205,8 +220,15 @@ public class LlmGatewayFacade {
             provider,
             request.getPrompt().length());
 
-        // ── 6. Delegate to provider ───────────────────────────────────
-        response = providerBean.execute(request);
+        // ── 6. Delegate to provider (with per-provider CB outcome recording) ──
+        long cbStart = System.currentTimeMillis();
+        try {
+          response = providerBean.execute(request);
+          perProviderCb.onSuccess(System.currentTimeMillis() - cbStart, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (Exception ex) {
+          perProviderCb.onError(System.currentTimeMillis() - cbStart, java.util.concurrent.TimeUnit.MILLISECONDS, ex);
+          throw ex;
+        }
 
         // ── 7. Attach observability metadata ──────────────────────────
         response.setTraceId(traceId);
