@@ -1,7 +1,7 @@
 package com.llm.gateway.llm_gateway.handler;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.llm.gateway.llm_gateway.config.FeatureFlagProperties;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.exception.LLMProviderNotSupportedException;
@@ -151,7 +151,7 @@ public class LlmStreamHandler {
       data =
           objectMapper.writeValueAsString(
               new StreamErrorEvent("error", code, safeMessage, requestId));
-    } catch (JsonProcessingException e) {
+    } catch (JacksonException e) {
       data =
           "{\"type\":\"error\",\"code\":\""
               + code

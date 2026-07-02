@@ -231,7 +231,7 @@ removes real coupling, not for its own sake:
 - **GoF design patterns throughout** — Facade, Strategy, Registry, Chain of Responsibility, Template Method, Adapter, Observer, Decorator, Builder, Proxy (see [Design Patterns](#design-patterns-gof))
 - **Sensitive-data guard (all providers)** — provider-agnostic PII + secret redaction applied in the facade on both request and response, so nothing sensitive is sent to an LLM, cached, or logged
 - **Externalised guardrail patterns** — all injection / PII / toxicity pattern lists tunable in YAML (`llm.guardrails.patterns.*`) without code changes
-- **Redis prompt cache** — SHA-256 keyed (includes system prompt, template vars, assistant message), configurable TTL
+- **Redis prompt cache** — SHA-256 keyed (includes system prompt, template vars, assistant message), configurable TTL; optional semantic layer reuses cached responses for near-duplicate prompts via embedding cosine similarity (`LLM_CACHE_SEMANTIC_ENABLED`)
 - **Streaming** — SSE token streaming per provider (with guardrail chain + timeout + error events)
 - **Embeddings** — `POST /llm/v1/embed` generates vector embeddings via OpenAI (or Ollama)
 - **Structured output** — typed Java record extraction from LLM responses (via facade for full observability)
@@ -404,6 +404,10 @@ LLM_PROVIDERS_OPENAI_ENABLED=false
 | `LLM_CACHE_ENABLED`         | `true`  | Toggle prompt cache      |
 | `LLM_CACHE_TTL_MINUTES`     | `60`    | Cache entry lifetime     |
 | `LLM_CHAT_MEMORY_TTL_HOURS` | `24`    | Session history lifetime |
+| `LLM_CACHE_SEMANTIC_ENABLED` | `false` | Embedding-similarity fallback on exact-cache miss (costs one embedding call per miss) |
+| `LLM_CACHE_SEMANTIC_THRESHOLD` | `0.95` | Minimum cosine similarity to reuse a cached response |
+| `LLM_CACHE_SEMANTIC_MAX_ENTRIES` | `256` | Per provider:model embedding-index size (LRU-evicted) |
+| `LLM_CACHE_SEMANTIC_INDEX_TTL_MINUTES` | `120` | Embedding-index lifetime |
 
 ### Request
 

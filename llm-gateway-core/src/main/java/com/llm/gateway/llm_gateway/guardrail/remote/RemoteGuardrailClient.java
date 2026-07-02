@@ -40,7 +40,9 @@ public class RemoteGuardrailClient {
   private final ObjectMapper objectMapper;
   private final RemoteGuardrailProperties properties;
   private final LlmMetricsService metricsService;
-  private final Tracer tracer;
+  // Optional: no Tracer bean exists when tracing autoconfiguration is disabled (e.g. tests);
+  // trace propagation is then simply skipped.
+  private final org.springframework.beans.factory.ObjectProvider<Tracer> tracerProvider;
 
   /**
    * Validates {@code text} against the sidecar.
@@ -80,6 +82,8 @@ public class RemoteGuardrailClient {
   }
 
   private String buildTraceparent() {
+    Tracer tracer = tracerProvider.getIfAvailable();
+    if (tracer == null) return null;
     Span span = tracer.currentSpan();
     if (span == null) return null;
     TraceContext ctx = span.context();

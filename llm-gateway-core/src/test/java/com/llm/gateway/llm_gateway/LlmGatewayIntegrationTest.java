@@ -30,7 +30,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
       "spring.ai.openai.api-key=test-key",
       "spring.ai.anthropic.api-key=test-key",
       "llm.external.guardrails.enabled=false",
-      "llm.guardrails.external.enabled=false"
+      "llm.guardrails.external.enabled=false",
+      // no JDBC DataSource in this slice (Flyway disabled), so the 'db' contributor doesn't exist
+      "management.endpoint.health.group.readiness.include=readinessState"
     })
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

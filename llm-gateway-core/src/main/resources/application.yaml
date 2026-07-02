@@ -7,6 +7,14 @@ app:
     project-version: 0.0.1-SNAPSHOT
     spring-ai-version: 2.0.0
     database: PostgreSQL 18
+  features:
+    streaming-enabled: ${STREAMING_ENABLED:true}
+    semantic-cache-enabled: ${SEMANTIC_CACHE_ENABLED:true}
+    auto-failover-enabled: ${AUTO_FAILOVER_ENABLED:true}
+    external-guardrails-enabled: ${EXTERNAL_GUARDRAILS_ENABLED:true}
+    hallucination-guard-enabled: ${HALLUCINATION_GUARD_ENABLED:true}
+    cost-tracking-enabled: ${COST_TRACKING_ENABLED:true}
+    audit-logging-enabled: ${AUDIT_LOGGING_ENABLED:true}
 
 server:
   port: 8080
@@ -290,6 +298,13 @@ llm:
     enabled: ${LLM_CACHE_ENABLED:true}
     ttl-minutes: ${LLM_CACHE_TTL_MINUTES:60}
     key-prefix: "llm:cache"
+    # Embedding-similarity fallback for the exact-match cache. Opt-in: every exact
+    # miss costs one embedding call while enabled.
+    semantic:
+      enabled: ${LLM_CACHE_SEMANTIC_ENABLED:false}
+      similarity-threshold: ${LLM_CACHE_SEMANTIC_THRESHOLD:0.95}
+      max-entries: ${LLM_CACHE_SEMANTIC_MAX_ENTRIES:256}
+      index-ttl-minutes: ${LLM_CACHE_SEMANTIC_INDEX_TTL_MINUTES:120}
   chat:
     memory:
       ttl-hours: ${LLM_CHAT_MEMORY_TTL_HOURS:24}
@@ -405,12 +420,5 @@ llm:
     # Max seconds to wait per provider during failover before skipping to the next.
     # Keeps the overall chain fast even when one provider is slow or hanging.
     provider-timeout-seconds: ${LLM_AUTO_FAILOVER_PROVIDER_TIMEOUT:10}
-app:
-  features:
-    streaming-enabled: ${STREAMING_ENABLED:true}
-    semantic-cache-enabled: ${SEMANTIC_CACHE_ENABLED:true}
-    auto-failover-enabled: ${AUTO_FAILOVER_ENABLED:true}
-    external-guardrails-enabled: ${EXTERNAL_GUARDRAILS_ENABLED:true}
-    hallucination-guard-enabled: ${HALLUCINATION_GUARD_ENABLED:true}
-    cost-tracking-enabled: ${COST_TRACKING_ENABLED:true}
-    audit-logging-enabled: ${AUDIT_LOGGING_ENABLED:true}
+# app.features moved to the app: block at the top of this file (duplicate top-level
+# keys are rejected by SnakeYAML and broke every @SpringBootTest context load).

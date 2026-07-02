@@ -36,6 +36,7 @@ public class PromptCacheService {
 
   private final StringRedisTemplate redisTemplate;
   private final ObjectMapper objectMapper;
+  private final SemanticPromptCache semanticCache;
 
   @Value("${llm.cache.enabled:true}")
   private boolean enabled;
@@ -65,7 +66,7 @@ public class PromptCacheService {
       String value = redisTemplate.opsForValue().get(key);
       if (value == null) {
         log.debug("CACHE | MISS | key={}", key);
-        return Optional.empty();
+        return semanticLookup(provider, request);
       }
       LlmResponse response = objectMapper.readValue(value, LlmResponse.class);
       log.info("CACHE | HIT  | key={} | provider={}", key, provider);
@@ -97,6 +98,7 @@ public class PromptCacheService {
       String key = buildKey(provider, request);
       String value = objectMapper.writeValueAsString(response);
       redisTemplate.opsForValue().set(key, value, Duration.ofMinutes(ttlMinutes));
+      semanticCache.register(provider, effectiveModel(request), request.getPrompt(), key);
       log.debug("CACHE | STORE | key={} | ttl={}min", key, ttlMinutes);
     } catch (Exception e) {
       log.warn(
@@ -118,11 +120,43 @@ public class PromptCacheService {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
+  // Semantic fallback
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Exact-key miss fallback: looks up a semantically similar previous prompt and serves its cached
+   * response. A stale index entry (underlying value expired) is pruned and treated as a miss.
+   */
+  private Optional<LlmResponse> semanticLookup(String provider, LlmRequest request) {
+    String model = effectiveModel(request);
+    return semanticCache
+        .findSimilarKey(provider, model, request.getPrompt())
+        .flatMap(
+            similarKey -> {
+              String value = redisTemplate.opsForValue().get(similarKey);
+              if (value == null) {
+                semanticCache.removeStale(provider, model, similarKey);
+                return Optional.empty();
+              }
+              try {
+                return Optional.of(objectMapper.readValue(value, LlmResponse.class));
+              } catch (Exception e) {
+                log.warn("CACHE | Semantic hit deserialization error | error={}", e.getMessage());
+                return Optional.empty();
+              }
+            });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
   // Key construction
   // ──────────────────────────────────────────────────────────────────────────
 
+  private static String effectiveModel(LlmRequest request) {
+    return request.getModel() != null ? request.getModel() : "default";
+  }
+
   private String buildKey(String provider, LlmRequest request) {
-    String model = request.getModel() != null ? request.getModel() : "default";
+    String model = effectiveModel(request);
     // Include every field that affects the model's response so that
     // different system prompts / template vars never collide on the same key.
     String keySource =
