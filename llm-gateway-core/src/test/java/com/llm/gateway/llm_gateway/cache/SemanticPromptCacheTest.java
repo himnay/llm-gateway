@@ -1,6 +1,7 @@
 package com.llm.gateway.llm_gateway.cache;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.ObjectProvider;
@@ -49,6 +50,7 @@ class SemanticPromptCacheTest {
   }
 
   @Test
+  @DisplayName("disabled cache returns empty and never touches Redis or the embedding model")
   void disabledCacheDoesNothing() {
     ReflectionTestUtils.setField(cache, "enabled", false);
 
@@ -57,6 +59,7 @@ class SemanticPromptCacheTest {
   }
 
   @Test
+  @DisplayName("returns the key of the most similar cached prompt when its similarity exceeds the threshold")
   void returnsKeyOfMostSimilarPromptAboveThreshold() throws Exception {
     when(embeddingModel.embed(anyString())).thenReturn(new float[] {1.0f, 0.0f});
     when(hashOps.entries("llm:cache:sem:openai:gpt-4o:vec"))
@@ -70,6 +73,7 @@ class SemanticPromptCacheTest {
   }
 
   @Test
+  @DisplayName("returns empty when no cached entry's similarity clears the threshold")
   void returnsEmptyWhenNothingClearsThreshold() throws Exception {
     when(embeddingModel.embed(anyString())).thenReturn(new float[] {1.0f, 0.0f});
     when(hashOps.entries(anyString()))
@@ -80,6 +84,7 @@ class SemanticPromptCacheTest {
   }
 
   @Test
+  @DisplayName("returns empty when the semantic index has no entries")
   void returnsEmptyOnEmptyIndex() {
     when(embeddingModel.embed(anyString())).thenReturn(new float[] {1.0f, 0.0f});
     when(hashOps.entries(anyString())).thenReturn(Map.of());
@@ -88,6 +93,7 @@ class SemanticPromptCacheTest {
   }
 
   @Test
+  @DisplayName("swallows embedding model failures and returns empty instead of throwing")
   void embeddingFailureIsSwallowed() {
     when(embeddingModel.embed(anyString())).thenThrow(new RuntimeException("provider down"));
 
@@ -95,6 +101,7 @@ class SemanticPromptCacheTest {
   }
 
   @Test
+  @DisplayName("cosine() handles edge cases such as null vectors, mismatched lengths, and zero vectors")
   void cosineHandlesEdgeCases() {
     assertThat(SemanticPromptCache.cosine(new float[] {1, 0}, new float[] {1, 0})).isEqualTo(1.0);
     assertThat(SemanticPromptCache.cosine(new float[] {1, 0}, new float[] {0, 1})).isEqualTo(0.0);

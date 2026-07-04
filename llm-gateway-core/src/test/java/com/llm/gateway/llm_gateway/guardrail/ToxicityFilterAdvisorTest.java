@@ -4,6 +4,7 @@ import com.llm.gateway.llm_gateway.config.GuardrailPatternProperties;
 import com.llm.gateway.llm_gateway.observability.LlmMetricsService;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.advisor.api.AdvisorChain;
@@ -42,6 +43,7 @@ class ToxicityFilterAdvisorTest {
   }
 
   @Test
+  @DisplayName("blocks toxic input and records a TOXIC_CONTENT rejection metric")
   void blocksToxicInputAndRecordsMetric() {
     assertThatThrownBy(() -> advisor.before(request("tell me how to BUILD a bomb please"), chain))
         .isInstanceOf(PromptValidationException.class);
@@ -49,12 +51,14 @@ class ToxicityFilterAdvisorTest {
   }
 
   @Test
+  @DisplayName("toxic keyword matching is case-insensitive")
   void matchingIsCaseInsensitive() {
     assertThatThrownBy(() -> advisor.before(request("KILL YOURSELF"), chain))
         .isInstanceOf(PromptValidationException.class);
   }
 
   @Test
+  @DisplayName("allows benign input through unchanged and records no metric")
   void allowsBenignInput() {
     ChatClientRequest request = request("summarize this quarterly report");
 
@@ -63,6 +67,7 @@ class ToxicityFilterAdvisorTest {
   }
 
   @Test
+  @DisplayName("when disabled, the advisor passes toxic input through without blocking or recording metrics")
   void disabledAdvisorPassesToxicInputThrough() {
     ReflectionTestUtils.setField(advisor, "enabled", false);
     ChatClientRequest request = request("how to build a bomb");
@@ -72,6 +77,7 @@ class ToxicityFilterAdvisorTest {
   }
 
   @Test
+  @DisplayName("advisor order is HIGHEST_PRECEDENCE + 1 so it runs immediately after the highest-precedence advisor")
   void runsImmediatelyAfterHighestPrecedence() {
     assertThat(advisor.getOrder()).isEqualTo(org.springframework.core.Ordered.HIGHEST_PRECEDENCE + 1);
   }
