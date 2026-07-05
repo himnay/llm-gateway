@@ -108,6 +108,7 @@ This service now targets **Java 25** and **Spring AI 2.0.0** (up from Java 21 an
 - [Configuration Reference](#configuration-reference)
 - [Security — Keycloak / OAuth2 Authentication](#security--keycloak--oauth2-authentication)
 - [API Documentation](#api-documentation)
+- [Gateway Architecture Deep Dive](#gateway-architecture-deep-dive)
 - [Prompt Template System](#prompt-template-system)
 - [Guardrail Chain](#guardrail-chain)
 - [Guardrails Service (LangServe sidecar)](#guardrails-service-langserve-sidecar)
@@ -174,6 +175,382 @@ Client
 │    OTLP        ──  Distributed traces → Grafana Tempo           │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Gateway Architecture Deep Dive
+
+This section is a from-first-principles walkthrough of what this repository actually *is* —
+an **LLM gateway** (sometimes called an "AI proxy" or "LLM control plane") — and how its four
+most consequential subsystems (the guardrail chain, the two-tier prompt cache, the
+provider-agnostic sensitive-data redactor, and the metrics service) are actually implemented, not
+just configured. Everything below is grounded directly in `llm-gateway-core`'s source under
+`cache/`, `guardrail/`, `security/`, and `observability/` — file and class names are given so you
+can jump straight to the code.
+
+### What is an LLM gateway, and why not call OpenAI/Anthropic directly?
+
+An **LLM gateway** is a thin service that every LLM call in an organisation is routed through,
+instead of application code calling `api.openai.com` or `api.anthropic.com` directly. It exists
+because once you have more than one team, more than one LLM-backed feature, or any compliance
+obligation at all, letting each caller hold its own provider API key and hand-roll its own
+error handling, PII scrubbing, and cost tracking stops scaling almost immediately. Concretely,
+this repo centralises five concerns that would otherwise be duplicated (or, worse, silently
+skipped) in every service that wants to call an LLM:
+
+1. **Centralised guardrails.** Prompt-injection detection, PII/secret redaction, and toxicity
+   filtering are enforced once, in `LlmGatewayFacade`, for *every* caller and *every* provider —
+   including the custom REST providers (Google, Cohere, HuggingFace) that don't go through Spring
+   AI's `ChatClient` at all. An application team cannot forget to sanitise a prompt if the gateway
+   sanitises it for them before the provider is ever invoked.
+2. **Caching.** `PromptCacheService` and `SemanticPromptCache` (below) mean that two callers asking
+   the same — or a near-identical — question never pay for the LLM call twice. This is pure
+   savings that's invisible to the caller.
+3. **Cost and usage metrics.** `LlmMetricsService` (below) turns every request into Prometheus
+   time series — tokens, latency, rejections, cache hits — per provider and per model, without any
+   instrumentation in the caller.
+4. **Multi-provider routing and failover.** One request shape (`LlmRequest`) maps to six different
+   upstream APIs (OpenAI, Anthropic, Ollama, Google, Cohere, HuggingFace) plus OpenRouter's own
+   vendor-prefixed catalogue in the sibling `llm-openrouter` module. Swapping or adding a provider,
+   or failing over from one to another mid-outage, is a configuration and `LlmServiceProvider`
+   bean change — callers never see it.
+5. **A single point of auth, audit, and rate limiting.** Keycloak-issued JWTs, the `request_log`
+   audit table, and the Resilience4j rate limiter all live in one place instead of being
+   re-implemented (or forgotten) per caller.
+
+The trade-off a gateway makes deliberately: it adds one hop of latency and a stateful piece of
+infrastructure (Redis, Postgres) to what could otherwise be a stateless SDK call. This repo's bet
+is that the centralised guardrails, caching, and observability are worth that hop — and the code
+in `cache/`, `guardrail/`, and `observability/` below is what actually pays for that bet.
+
+### Component diagram
+
+```mermaid
+flowchart TB
+    Client["Client application\n(Authorization: Bearer JWT)"]
+
+    subgraph GW["LLM Gateway — llm-gateway-core (Spring WebFlux, port 8080)"]
+        direction TB
+        Security["Spring Security WebFlux\nOAuth2 Resource Server (Keycloak JWT)"]
+        Handler["LlmHandler / LlmStreamHandler"]
+        Facade["LlmGatewayFacade"]
+
+        subgraph Chain["Inbound Guardrail Chain (Chain of Responsibility)"]
+            direction TB
+            Step100["Step 100\nPromptSanitizationStep\n(injection block + strip + normalise)"]
+            Step200["Step 200\nSensitiveDataRedactionStep\n(PII / secret masking)"]
+            Step300["Step 300\nRemoteGuardrailStep\n(sidecar REST call)"]
+            Step100 --> Step200 --> Step300
+        end
+
+        CacheCheck{"PromptCacheService\nexact SHA-256 key hit?"}
+        SemCache["SemanticPromptCache\ncosine-similarity fallback\n(only if enabled)"]
+        Registry["LlmProviderRegistry\n(Strategy + Factory)"]
+        Advisors["Spring AI advisor chain\n(ToxicityFilter, PiiRedaction,\nTopicFilter, Metrics, ChatMemory,\nLogger, ResponseFormat, Hallucination)"]
+        Metrics["LlmMetricsService\n(Micrometer counters / timers)"]
+    end
+
+    Sidecar["Guardrails sidecar\n(FastAPI + LangServe, :8000)"]
+    Redis[("Redis\nprompt cache + chat memory\n+ semantic embedding index")]
+    Postgres[("PostgreSQL\nrequest_log audit table")]
+
+    subgraph Providers["Upstream LLM providers"]
+        direction LR
+        OpenAI["OpenAI"]
+        Anthropic["Anthropic Claude"]
+        Ollama["Ollama"]
+        Google["Google Gemini"]
+        Cohere["Cohere"]
+        HF["HuggingFace"]
+    end
+
+    OpenRouter["llm-openrouter module\n(port 8085) → OpenRouter\n(vendor-prefixed multi-model router)"]
+
+    Client -->|HTTPS| Security --> Handler --> Facade
+    Facade --> Chain
+    Step300 -.REST POST /guardrails/invoke.-> Sidecar
+    Chain --> CacheCheck
+    CacheCheck -- miss --> SemCache
+    SemCache -.embed + compare.-> Redis
+    CacheCheck <-.->|exact key lookup| Redis
+    CacheCheck -- hit --> Facade
+    CacheCheck -- miss --> Registry
+    Registry --> Advisors --> Providers
+    Facade --> Metrics
+    Facade --> Postgres
+    Facade -->|cache the response| Redis
+    Client -.->|optionally targets| OpenRouter
+    OpenRouter --> OpenRouterAPI["OpenRouter API\n(openrouter.ai)"]
+```
+
+### Sequence diagram — one representative `/query` request
+
+The diagram below traces a single `POST /llm/v1/query` call end-to-end, showing the guardrail
+chain's fixed execution order (100 → 200 → 300) and the two places the request can short-circuit:
+a guardrail rejection, or a cache hit that skips the upstream provider entirely.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client
+    participant Handler as LlmHandler
+    participant Facade as LlmGatewayFacade
+    participant S100 as PromptSanitizationStep (100)
+    participant S200 as SensitiveDataRedactionStep (200)
+    participant S300 as RemoteGuardrailStep (300)
+    participant Sidecar as Guardrails sidecar
+    participant Cache as PromptCacheService
+    participant SemCache as SemanticPromptCache
+    participant Redis
+    participant Provider as LlmServiceProvider (e.g. OpenAI)
+    participant Metrics as LlmMetricsService
+
+    Client->>Handler: POST /llm/v1/query {prompt, provider}
+    Handler->>Facade: execute(request)
+
+    Facade->>S100: apply(context)
+    alt injection pattern matched, block-on-violation=true
+        S100-->>Facade: throw PromptValidationException
+        Facade-->>Client: 400 + violations (request stops here)
+    else clean or strip-only
+        S100-->>Facade: prompt (sanitized), warnings[]
+    end
+
+    Facade->>S200: apply(context)
+    S200-->>Facade: prompt with PII/secrets replaced by [EMAIL]/[API_KEY]/...
+    Metrics->>Metrics: recordSensitiveDataRedaction(provider, "inbound", types)
+
+    Facade->>S300: apply(context)
+    S300->>Sidecar: POST /guardrails/invoke {text, stage:"input"}
+    alt sidecar rejects
+        Sidecar-->>S300: {passed:false, violations}
+        S300-->>Facade: throw PromptValidationException
+        Facade-->>Client: 400 + violations (request stops here)
+    else sidecar passes (or fails open on timeout/circuit-open)
+        Sidecar-->>S300: {passed:true, sanitized_text?}
+        S300-->>Facade: prompt (possibly further sanitized)
+    end
+
+    Facade->>Cache: get(provider, request)
+    Cache->>Redis: GET llm:cache:{provider}:{model}:{sha256(prompt|sysPrompt|assistant|vars)}
+    alt exact cache hit
+        Redis-->>Cache: cached LlmResponse JSON
+        Cache-->>Facade: LlmResponse (cache_hit=true)
+    else exact miss
+        Redis-->>Cache: nil
+        Cache->>SemCache: findSimilarKey(provider, model, prompt)
+        SemCache->>SemCache: embed(prompt) via EmbeddingModel
+        SemCache->>Redis: HGETALL llm:cache:sem:{provider}:{model}:vec
+        alt cosine similarity >= threshold (default 0.95)
+            SemCache-->>Cache: bestKey
+            Cache->>Redis: GET bestKey
+            Redis-->>Cache: cached LlmResponse JSON
+            Cache-->>Facade: LlmResponse (semantic hit)
+        else no entry clears the threshold
+            SemCache-->>Cache: empty
+            Cache-->>Facade: empty (true miss)
+            Facade->>Provider: call ChatClient / REST provider
+            Provider-->>Facade: LlmResponse
+            Facade->>Cache: put(provider, request, response)
+            Cache->>Redis: SET llm:cache:{...} (TTL 60m)
+            Cache->>SemCache: register(provider, model, prompt, exactKey)
+            SemCache->>Redis: HSET vec-hash + ZADD lru-zset (TTL 120m)
+        end
+    end
+
+    Facade->>Metrics: recordRequest / recordLatency / recordTokenUsage
+    Facade-->>Client: 200 LlmResponse {content, cache_hit, latency_ms, ...}
+```
+
+### Two-tier prompt cache: exact-match + semantic similarity
+
+`cache/PromptCacheService.java` and `cache/SemanticPromptCache.java` implement a deliberately
+layered cache, because "same prompt" and "same *meaning*" are different problems with different
+cost/risk trade-offs.
+
+**Tier 1 — exact-match cache (`PromptCacheService`, always on by default).**
+The cache key is not just a hash of the prompt string; it is a SHA-256 hash of everything that
+can change the model's answer for the *same* nominal prompt:
+
+```
+llm:cache:{provider}:{effectiveModel}:{SHA-256(prompt|systemPrompt|assistantMessage|templateVars)}
+```
+
+(see `PromptCacheService.buildKey`). This matters in practice: two callers who send the same
+`prompt` but a different `system_prompt`, a different assistant-prefill, or different
+`template_vars` are — correctly — treated as different requests and never collide on the same
+cache entry. A hit returns the previously stored `LlmResponse` verbatim (`cache_hit: true` in the
+response body) and the upstream provider is never called. A miss falls through to Tier 2. Reads
+and writes are both wrapped in try/catch that swallow *any* Redis error and log a warning — a
+Redis outage degrades the gateway to "always call the provider," it never breaks a request.
+Successful writes have a configurable TTL (`LLM_CACHE_TTL_MINUTES`, default 60); responses that
+carry an `error` are explicitly never cached (`if (response.getError() != null) return;`).
+
+**Tier 2 — semantic similarity cache (`SemanticPromptCache`, opt-in via
+`LLM_CACHE_SEMANTIC_ENABLED`, default `false`).** This is what makes "summarize this report" and
+"please summarize this report" both resolve to the same cached answer, which byte-exact hashing
+by definition cannot do. On an exact-cache miss, `PromptCacheService.semanticLookup` asks
+`SemanticPromptCache.findSimilarKey` for the exact-cache key of the most similar previously seen
+prompt, scoped to the same `provider:model`:
+
+1. The incoming prompt is embedded via Spring AI's `EmbeddingModel` (injected as an
+   `ObjectProvider`, so the cache degrades gracefully — returns empty — if no embedding model bean
+   is configured at all).
+2. The candidate index — every previously embedded prompt for this `provider:model` pair — is
+   loaded from a single Redis hash (`llm:cache:sem:{provider}:{model}:vec`, entry = exact-cache
+   key → JSON-encoded `float[]`) and scanned **linearly in memory**, computing cosine similarity
+   (`SemanticPromptCache.cosine`) against the query vector.
+3. The best match is returned only if its similarity is `>= similarity-threshold`
+   (`LLM_CACHE_SEMANTIC_THRESHOLD`, default `0.95` — deliberately conservative, since a false
+   "similar enough" match silently returns the wrong answer). Anything below threshold is treated
+   as a true miss.
+4. On a genuine miss, once the provider responds, `PromptCacheService.put` also calls
+   `SemanticPromptCache.register`, which embeds the prompt, stores the vector in the hash, and
+   records the insertion time in a companion Redis sorted set
+   (`llm:cache:sem:{provider}:{model}:lru`) keyed by the same exact-cache key. Once the sorted set
+   exceeds `LLM_CACHE_SEMANTIC_MAX_ENTRIES` (default 256) entries, the *oldest* entries (lowest
+   score in the zset, i.e. earliest insertion) are evicted from both the hash and the zset — an
+   LRU-by-insertion-order policy that bounds both Redis memory and the cost of the per-lookup
+   linear scan. Both structures also carry a TTL (`LLM_CACHE_SEMANTIC_INDEX_TTL_MINUTES`, default
+   120) independent of the underlying response's own TTL; `removeStale` prunes an index entry
+   whose underlying cached value has already expired, so a semantic "hit" against a key with no
+   backing value is treated as a miss rather than returned as `null`.
+
+Every method in `SemanticPromptCache` catches and swallows its own exceptions and logs at `WARN`
+or `DEBUG` — by design, semantic caching is a **best-effort latency/cost optimisation**, and a bug
+or outage in the embedding path must never be allowed to fail a request that would otherwise have
+succeeded. The cost/benefit is explicit in the class Javadoc: it's off by default because *every
+exact-cache miss now costs one embedding API call* — you're trading a guaranteed small embedding
+cost against a probabilistic chance of avoiding a much larger completion cost.
+
+### The guardrail chain: Chain of Responsibility, precisely
+
+The **Level 1 gateway guardrail chain** (as distinct from the Level 2 Spring AI advisor chain,
+which only runs for the three `ChatClient`-backed providers) is a textbook GoF *Chain of
+Responsibility*, implemented in `guardrail/chain/`:
+
+- **`GuardrailStep`** — the handler interface. It extends `Ordered`; `getOrder()` determines
+  position, and three numeric bands are reserved by convention (100/200/300, with gaps
+  deliberately left for future steps to slot in between without renumbering everything else).
+- **`GuardrailContext`** — the mutable request-in-flight object threaded through every step. It
+  wraps the live `LlmRequest`, exposes `getPrompt()`/`updatePrompt(String)` so a step can rewrite
+  the prompt in place, tracks whether *any* step has modified it (`promptModified`, which flows
+  into `LlmResponse.sanitized`), and accumulates human-readable `warnings`.
+- **`GuardrailChain`** — the invoker. Spring injects `List<GuardrailStep>` already sorted by
+  `Ordered` (no manual sorting code needed), logs the resolved chain once at `@PostConstruct` time
+  so you can see exactly which steps are active in the boot log, and then simply iterates the list
+  calling `step.apply(context)`. Any step is free to throw `PromptValidationException` to stop the
+  whole chain; `GuardrailChain` catches it, publishes a `GuardrailViolationEvent` (GoF *Observer* —
+  decoupling "something got rejected" from "audit-log it" / "alert on it"), and re-throws so the
+  facade maps it to an HTTP 400.
+
+The three steps that make up the chain today:
+
+| Order | Step (class) | What it actually checks | Outcome |
+|-------|--------------|--------------------------|---------|
+| **100** | `PromptSanitizationStep` → delegates to `security/PromptSanitizer` | Three checks in sequence: (1) blank/length — reject over `LLM_MAX_PROMPT_LENGTH` (10,000 chars default); (2) **hard-block regex patterns** for prompt injection — instruction-override ("ignore all previous instructions"), role-hijacking ("you are now an evil/unrestricted AI"), jailbreak keywords ("DAN mode", "developer mode", "do anything now"), restriction-bypass phrasing, delimiter injection (`### SYSTEM ###`, `[[SYSTEM]]`), and system-prompt exfiltration attempts ("reveal your system prompt") — all externalised in `GuardrailPatternProperties.injection`; (3) **strip patterns** that are silently removed rather than rejected — `<script>` tags, any HTML tag, control characters, Unicode bidi-override characters, and 200+ repeated-character floods — followed by whitespace/line-ending normalisation | Hard-block match with `block-on-violation=true` (default) → **HTTP 400**, chain stops. Strip/normalise matches → prompt rewritten, request continues with `sanitized=true` |
+| **200** | `SensitiveDataRedactionStep` → delegates to `security/SensitiveDataRedactor` | Scans the (already sanitized) prompt for PII and secrets — see the dedicated section below | Never rejects — always rewrites the prompt in place, replacing detected spans with typed placeholders, and records a `llm.sensitive.data.redactions.total{provider,direction=inbound,type}` metric per category found |
+| **300** | `RemoteGuardrailStep` → delegates to `guardrail/remote/RemoteGuardrailClient` | Calls the LangServe sidecar (`POST /guardrails/invoke`) with the fully-sanitized-and-redacted prompt for its heavier checks: prompt-injection/jailbreak heuristics, toxicity, PII, blocked-topics policy, and an optional LangChain LLM-as-judge — the checks that are too expensive or too Python-ecosystem-specific to run in-process | Sidecar `passed:false` → **HTTP 400** with the sidecar's own `violations`. Sidecar down/timeout/circuit-open → fail-open (default, continue without remote validation) or fail-closed (`LLM_EXTERNAL_GUARDRAILS_FAIL_OPEN=false`, reject) — a `sanitized_text` in a passing response also rewrites the prompt |
+
+Two properties of this design are worth calling out explicitly because they're easy to miss on a
+first read of the code:
+
+- **Steps run in a strict, fixed order, and each sees the *output* of the previous one** — step
+  200 redacts PII from the prompt that step 100 already sanitized, and step 300 sends the sidecar
+  the prompt with both the injection-sanitization *and* the PII redaction already applied. A raw,
+  un-redacted prompt is never sent over the wire to the sidecar, and never reaches step 300's
+  logs.
+- **Adding a new guardrail is a zero-diff-to-existing-code operation** — implement `GuardrailStep`,
+  annotate it `@Component`, pick an order number, and Spring's list injection wires it into the
+  chain automatically. This is the entire point of the Chain of Responsibility pattern here: the
+  facade that invokes `GuardrailChain.apply(context)` never changes as guardrails are added,
+  removed, or reordered.
+
+### Sensitive-data redaction: what `SensitiveDataRedactor` actually catches
+
+`security/SensitiveDataRedactor.java` is the single source of truth for PII/secret detection
+across the *entire* gateway — it's invoked both by chain step 200 (covering every provider,
+including the three custom REST providers that bypass Spring AI entirely) and, for defence in
+depth, by `PiiRedactionAdvisor` in the Spring AI advisor chain for the `ChatClient` providers.
+
+Internally it holds an **ordered** `LinkedHashMap<String placeholder, Pattern regex>`, built once
+at construction from `GuardrailPatternProperties.sensitiveData` — insertion order is preserved
+deliberately, because more specific patterns (e.g. a PEM private key block) must be matched and
+replaced *before* a more general one could partially match inside it. `redact(text)` runs every
+pattern against the text in that order, replacing all matches with the type's placeholder
+(`"api-key"` → `[API_KEY]`, via `toPlaceholder`), and returns a `Result(redacted, text, types)`
+record — `redact()` never mutates in place and never throws; blank/null input is returned
+unchanged. A separate `detect(text)` method exists for **non-blocking leak monitoring** — it
+reports which categories *would* match without altering the text, used to scan LLM responses for
+accidental PII leakage without redacting a response the caller is entitled to see verbatim.
+
+The fail-safe default catalogue, shipped in code so protection is never silently disabled by a
+missing config block (`GuardrailPatternProperties.defaultSensitiveData()`), covers, in match
+order:
+
+| Placeholder | Category | Detects |
+|---|---|---|
+| `[PRIVATE_KEY]` | Secret | PEM-encoded RSA/EC/OpenSSH/PGP private key blocks (`-----BEGIN ... PRIVATE KEY-----` … `-----END ...-----`) |
+| `[API_KEY]` | Secret | `sk-`, `sk-ant-`, `sk-proj-`, `rk-`, `pk-` prefixed API keys (OpenAI/Anthropic-style) |
+| `[AWS_KEY]` | Secret | AWS access key IDs (`AKIA…`/`ASIA…`) |
+| `[BEARER_TOKEN]` | Secret | `Bearer <token>` HTTP authorization headers embedded in text |
+| `[EMAIL]` | PII | E-mail addresses |
+| `[CREDIT_CARD]` | PII | Visa/Mastercard/Amex/Discover card number patterns |
+| `[SSN]` | PII | US Social Security Numbers (`###-##-####`) |
+| `[IBAN]` | PII | International Bank Account Numbers |
+| `[IP_ADDRESS]` | PII | IPv4 addresses |
+| `[PHONE]` | PII | Phone numbers (with or without country code / formatting) |
+| `[PASSPORT]` | PII | Passport-number-shaped alphanumeric strings |
+
+This whole catalogue is overridable purely in YAML under `llm.guardrails.patterns.sensitive-data`
+(a `type-name -> regex` map) with no recompilation — a value you set **replaces** the default for
+that category rather than merging with it, and an invalid regex is logged and skipped at startup
+rather than crashing the app (`Pattern.compile` failures are caught per-entry in the
+`SensitiveDataRedactor` constructor).
+
+Operationally, this redactor is what makes the "sensitive-data guard (all providers)" claim in the
+[Features](#features) list true: because it is invoked from the facade rather than from inside the
+Spring AI advisor chain, it applies uniformly whether the request goes to OpenAI via `ChatClient`
+or to Cohere via a hand-rolled `RestClient` call — there is exactly one place PII/secret detection
+lives, not six.
+
+### What `LlmMetricsService` tracks, and why it matters operationally
+
+`observability/LlmMetricsService.java` is the gateway's single Micrometer integration point —
+every other component that wants to emit a metric calls into this service rather than touching
+`MeterRegistry` directly, which keeps metric names and tag keys consistent across the codebase.
+Two design choices are worth calling out:
+
+- **Pre-registration at startup.** `@PostConstruct preRegister()` eagerly creates the
+  `llm.requests.total` counter (for every combination of a known provider and `cache_hit` in
+  `{true, false}`) and the `llm.request.latency.seconds` histogram timer for every known provider
+  (`openai, anthropic, ollama, google, huggingface, cohere, failover, auto-failover`), caching them
+  in `ConcurrentHashMap`s. `recordRequest`/`recordLatency` then do a map lookup instead of asking
+  the registry to build-or-fetch a meter on every request — this matters on the hot path of a
+  gateway that may be handling thousands of requests per second, and it also means Grafana/
+  Prometheus see a steady set of time series from process start rather than series that only
+  appear the first time a given provider is actually called.
+- **One method per operationally meaningful event**, not a generic `emit(name, tags)` API — this
+  makes it easy to grep the codebase for exactly where a given signal is produced. The catalogue:
+
+| Method | Metric | Why it exists operationally |
+|---|---|---|
+| `recordRequest(provider, cacheHit)` | `llm_requests_total{provider,cache_hit}` | The denominator for cache-hit-rate dashboards — `cache_hit="true"` vs `"false"` volume directly shows how much LLM spend the cache is deflecting |
+| `recordProviderCall(provider, model, outcome)` | `llm_provider_calls_total{provider,model,outcome}` | Success/error call volume broken down **per model**, not just per provider — catches a specific model degrading (e.g. `gpt-4o` erroring while `gpt-4o-mini` is fine) that a provider-only view would hide |
+| `recordTokenUsage(provider, model, prompt, completion, total)` | `llm_tokens_total{provider,model,type}` | Raw input for cost attribution and capacity planning — feeds `TokenCostService`'s `X-LLM-Cost-USD` header and the `llm_cost_usd_total` counter |
+| `recordLatency(provider, latencyMs)` | `llm_request_latency_seconds{provider}` (percentile histogram) | p50/p95/p99 per provider — the number you page on when "the gateway feels slow" turns out to be one upstream provider having a bad day |
+| `recordPromptLength(provider, length)` | `llm_prompt_length_chars{provider}` | A distribution summary — sudden shifts can indicate a caller bug (e.g. accidentally concatenating history into every prompt) or an attempted abuse pattern |
+| `recordCacheHit(provider)` | delegates to `recordRequest(provider, true)` | Convenience wrapper used at the cache-hit call site |
+| `recordError(provider, errorType)` | `llm_requests_errors_total{provider,error_type}` | Typed error counts — distinguishes, e.g., provider timeouts from malformed responses |
+| `recordSensitiveDataRedaction(provider, direction, types)` | `llm_sensitive_data_redactions_total{provider,direction,type}` | Per-category redaction volume, both `inbound` (prompt) and `outbound` (response) — a compliance-relevant signal: it proves the guard is actually firing, and on what, without ever logging the sensitive value itself |
+| `recordRejectedRequest(provider, reason)` | `llm_requests_rejected_total{provider,reason}` | Broken down by rejection *reason* (`INJECTION_DETECTED`, `TOXIC_CONTENT`, `EXTERNAL_GUARDRAIL`, ...) — the primary signal for "is someone probing our guardrails," and which guardrail is actually catching the traffic |
+| `recordProviderError` / `recordFailover` / `recordGuardrailRejection` | `llm_provider_error_total`, `llm_provider_failover_total{from,to}`, `llm_guardrail_rejection_total{reason}` | Finer-grained variants used by the failover path and generic guardrail bookkeeping |
+
+Taken together, these metrics answer the four questions an on-call engineer actually asks about a
+gateway: *is it up* (error/latency metrics), *is it expensive* (token/cost metrics), *is it being
+abused* (rejection/redaction metrics), and *is the cache earning its keep* (cache-hit metrics) —
+without instrumenting a single line of caller code, which is the entire operational argument for
+running an LLM gateway in the first place.
 
 ---
 
