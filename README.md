@@ -1,5 +1,7 @@
 # LLM Gateway
 
+<img src="image/spring-logo.png" alt="logo" width="80"/>
+
 A production-ready, reactive Spring Boot platform split into independently runnable Maven modules —
 **`llm-gateway-core`** (a single unified API for multiple LLM providers: OpenAI, HuggingFace, Cohere,
 Anthropic Claude, Ollama — with routing, failover, multi-turn chat memory, prompt safety, guardrails,
