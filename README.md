@@ -11,113 +11,28 @@ model catalog).
 
 ---
 
-## What's New (v2.4)
-
-Split into a multi-module Maven reactor and added an OpenRouter-backed module:
-
-| # | Category | Change |
-|---|----------|--------|
-| 1 | **Restructuring** | The single-module `llm-gateway` project is now a thin aggregator (`packaging=pom`) over two child modules: `llm-gateway-core` (all the existing code, unchanged behavior) and the new `llm-openrouter`. |
-| 2 | **Feature** | Added `llm-openrouter` — a reactive Spring AI service that calls [OpenRouter](https://openrouter.ai)'s OpenAI-SDK-compatible API (`POST /openrouter/v1/chat`), with per-request model override (OpenRouter's vendor-prefixed ids, e.g. `anthropic/claude-3.5-sonnet`), Resilience4j retry/circuit-breaker, and the same Keycloak JWT resource-server auth as every other service on the platform. |
-| 3 | **Infra** | Added `llm-openrouter-client` to the shared Keycloak realm (`docker/keycloak/llm-gateway-realm.json`). |
-| 4 | **Build hygiene** | Stopped hardcoding third-party version numbers directly in module `pom.xml` files. `springdoc-openapi-starter-webflux-ui`'s version now comes from `learning-bom`'s `dependencyManagement` (a property + import, like every other managed dependency); `spotless-maven-plugin` and `org.owasp:dependency-check-maven`'s versions now come from `super-pom`'s `pluginManagement` (mirroring the existing `jacoco-maven-plugin` pattern). Module `pom.xml`s declare these without a `<version>`. |
-| 5 | **Docker** | The root `Dockerfile` is now parametrized by a `MODULE` build-arg (`llm-gateway-core` \| `llm-openrouter`), mirroring `llm-chat`'s multi-module Dockerfile pattern. |
-
----
-
-## What's New (v2.3)
-
-Authentication moved from a custom X-API-Key/Postgres mechanism to Keycloak-issued OAuth2 JWTs:
-
-| # | Category      | Change                                                                                                                                                                                                                                                                                                                                           |
-|---|---------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1 | **Breaking**  | `X-API-Key` header auth is **removed**. Every protected request now needs `Authorization: Bearer <jwt>`, where the JWT is issued by Keycloak.                                                                                                                                                                                                    |
-| 2 | **Security**  | `SecurityConfig` now configures `oauth2ResourceServer().jwt(...)` with a custom `JwtAuthenticationConverter` that maps Keycloak's `realm_access.roles` claim to `ROLE_*` authorities (Keycloak doesn't use the standard `scope` claim Spring Security reads by default).                                                                         |
-| 3 | **Removed**   | `ApiKeyService`, `AdminHandler`, and the `/admin/keys` CRUD endpoints are gone — there's no key registry to administer anymore; identity and lifecycle live in Keycloak.                                                                                                                                                                         |
-| 4 | **Database**  | Added `V4__drop_api_keys.sql` — drops the now-unused `api_keys` table (existing `V1`/`V2` migrations are left untouched per Flyway convention; history isn't rewritten).                                                                                                                                                                         |
-| 5 | **Infra**     | Added a `keycloak` service to `docker-compose.yml` (`quay.io/keycloak/keycloak`, dev mode, realm auto-imported from `docker/keycloak/llm-gateway-realm.json`) so OAuth2 works out of the box locally.                                                                                                                                            |
-| 6 | **Config**    | `spring.security.oauth2.resourceserver.jwt.issuer-uri` added, defaulting to the local Keycloak realm; override with `KEYCLOAK_ISSUER_URI` for any other deployment.                                                                                                                                                                              |
-| 7 | **Known gap** | `RequestLogService` audit rows still don't capture caller identity — `LlmGatewayFacade` has always passed `client_id = null` to the audit log (pre-existing, not introduced here). Wiring the JWT subject/`preferred_username` claim into the audit log is a natural follow-up now that every caller is authenticated, but is out of scope here. |
-
----
-
-## What's New (v2.2)
-
-A Spring AI 2.0 alignment review plus a best-practices pass:
-
-| #  | Category                 | Change                                                                                                                                                                                                                                                                                                                  |
-|----|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1  | **Spring AI 2.0 review** | Audited every custom abstraction against Spring AI 2.0 out-of-box features (ChatClient/Advisors, `MessageChatMemoryAdvisor`, `@Tool`, `EmbeddingModel`, `ImageModel`, `PromptTemplate`, `.entity()` structured output). Verdict: the codebase already uses these idiomatically — there was very little left to replace. |
-| 2  | **Cleanup**              | Removed `PromptGuardAdvisor` — it was a pure pass-through that only logged prompt length; injection sanitization already happens upstream in `LlmGatewayFacade`. The advisor chain is now 8 steps, not 9.                                                                                                               |
-| 3  | **API versioning**       | Base path changed from `/llm` to `/llm/v1` (`spring.webflux.base-path`) so a future breaking v2 can coexist.                                                                                                                                                                                                            |
-| 4  | **Security**             | `gateway.cors.allowed-origins` was defined in config but never wired to anything — added a `CorsConfigurationSource` bean so it actually takes effect.                                                                                                                                                                  |
-| 5  | **Docs**                 | Functional routes (`LlmRouterConfig`) are now annotated with springdoc `@RouterOperation`/`@Operation`, so Swagger UI shows real summaries/descriptions/schemas instead of a bare skeleton.                                                                                                                             |
-| 6  | **Observability**        | Added k8s-style actuator health groups — `/actuator/health/readiness` (Redis + R2DBC + DB) and `/actuator/health/liveness`.                                                                                                                                                                                             |
-| 7  | **Containerization**     | Added a multi-stage `Dockerfile` (non-root user, `HEALTHCHECK`) and `.dockerignore` for the main app — previously only the guardrails sidecar had one.                                                                                                                                                                  |
-| 8  | **Security tooling**     | Added OWASP `dependency-check-maven`, opt-in via `mvn -P security-scan verify` (kept out of the default build — needs network/NVD access).                                                                                                                                                                              |
-| 9  | **Code quality**         | Added Spotless + Google Java Format, checked on every `mvn verify`.                                                                                                                                                                                                                                                     |
-| 10 | **CI**                   | `.github/workflows/ci.yml` now also runs `spotless:check`, a non-blocking OWASP scan job, and a non-blocking Docker build validation job.                                                                                                                                                                               |
-
----
-
-## What's New (v2.1)
-
-Security, correctness, and feature improvements:
-
-| #  | Category        | Change                                                                                                                                       |
-|----|-----------------|----------------------------------------------------------------------------------------------------------------------------------------------|
-| 1  | **Security**    | Auth is now **enabled by default** — set `GATEWAY_AUTH_ENABLED=false` only for local dev                                                     |
-| 2  | **Security**    | Redis password enforced — `REDIS_PASSWORD` defaults to `gatewayredis` in both app and Docker Compose                                         |
-| 3  | **Security**    | X-Forwarded-For only trusted from configured `GATEWAY_TRUSTED_PROXIES` (prevents IP spoofing)                                                |
-| 4  | **Security**    | Dev seed keys in `V2__seed_api_keys.sql` carry a hard ROTATE warning                                                                         |
-| 5  | **Bug fix**     | `GlobalExceptionHandler` was a `@RestControllerAdvice` that never fired for functional routes — replaced with a proper `WebExceptionHandler` |
-| 6  | **Bug fix**     | `RedisChatMemoryRepository.findConversationIds()` used blocking `KEYS *` — replaced with non-blocking `SCAN` cursor                          |
-| 7  | **Bug fix**     | `LlmResponse.response` (duplicate of `content`, never populated) removed                                                                     |
-| 8  | **Bug fix**     | `CompletableFuture.supplyAsync` in auto-failover used ForkJoinPool — replaced with `Mono.fromCallable().subscribeOn(boundedElastic)`         |
-| 9  | **Reliability** | `Hooks.enableAutomaticContextPropagation()` called at startup — MDC values (traceId, requestId) now survive Reactor scheduler hops           |
-| 10 | **Reliability** | Streaming handler now runs the inbound guardrail chain, enforces a per-stream timeout, and returns structured error events on failure        |
-| 11 | **Performance** | `LlmMetricsService` pre-registers counters/timers at startup instead of rebuilding on every request                                          |
-| 12 | **Feature**     | `POST /llm/v1/embed` — vector embedding endpoint (OpenAI `text-embedding-3-small` by default)                                                |
-| 13 | **Feature**     | Admin API key management — `GET/POST /llm/v1/admin/keys`, `PATCH/DELETE /llm/v1/admin/keys/{id}`                                             |
-| 14 | **Feature**     | Audit log — every request persisted to `request_log` table (prompt hash, provider, tokens, latency; raw prompt never stored)                 |
-| 15 | **Feature**     | `GET /llm/v1/models` now returns the **configured** default model per provider, not a hardcoded list                                         |
-| 16 | **Docs**        | Swagger UI available at `/llm/v1/swagger-ui.html` (via `springdoc-openapi-starter-webflux-ui`)                                               |
-| 17 | **Config**      | `GATEWAY_TRUSTED_PROXIES` and `LLM_STREAM_TIMEOUT_SECONDS` added                                                                             |
-
----
-
-## Runtime Migration: Java 21 → 25, Spring AI → 2.0.0
-
-This service now targets **Java 25** and **Spring AI 2.0.0** (up from Java 21 and Spring AI 2.0.0-M8), inherited from the shared `super-pom` / `llm-bom` chain — no module-level `java.version`, `maven.compiler.release`, or `spring-ai.version` override exists in this repo's `pom.xml`, so the bump required no POM edits here. The CI workflow (`.github/workflows/ci.yml`) was updated to provision JDK 25 via `actions/setup-java@v4` (it previously pinned JDK 21).
-
-**Verified in this environment** (JDK 25, Docker available):
-- `mvn -o compile` — succeeds under Azul Zulu 25.0.3.
-- `mvn clean test` with a real Docker daemon — **33 tests run / 0 skipped**. 22 pass cleanly. The 11 `LlmGatewayIntegrationTest` cases (now actually exercising real Testcontainers-backed Postgres 18 and Redis containers instead of being skipped) fail, but root-caused to the same pre-existing gap described below (`RemoteGuardrailClient` needs a `Tracer` bean that nothing in the codebase provides) — not a Docker- or migration-related regression. Fixed one genuine, Docker-surfaced bug along the way: Spring Boot's R2DBC Testcontainers service-connection factory (`PostgresR2dbcDatabaseContainerConnectionDetailsFactory`) needs `org.testcontainers:r2dbc` on the classpath, which was missing from `pom.xml` — only the JDBC-flavored `org.testcontainers:postgresql` module was declared. Added the `org.testcontainers:r2dbc` test dependency; this alone fixed the `NoClassDefFoundError: org/testcontainers/r2dbc/R2DBCDatabaseContainer` failure that previously prevented the R2DBC connection factory from initializing against the real container.
-- `docker compose up -d postgres redis` + `mvn spring-boot:run` — real boot attempted against live Postgres/Redis containers. Boot proceeds well past R2DBC/Redis repository scanning and bean creation, then fails at the same `UnsatisfiedDependencyException: ... required a bean of type 'io.micrometer.tracing.Tracer' that could not be found` while wiring `RemoteGuardrailClient`, confirming this is a **pre-existing gap in in-flight (uncommitted) tracing-propagation code**, unrelated to Docker, the Java/Spring AI bump, or the R2DBC fix above — `micrometer-tracing-bridge-otel` resolves correctly on the classpath, but no `Tracer` bean is produced anywhere in the codebase. Not fixed here since it's part of someone else's in-progress tracing work, outside this verification's scope.
-- **Heads up if you re-run `LlmGatewayIntegrationTest` directly:** without the guardrails sidecar running (`docker compose up -d guardrails`), it doesn't fail fast — `RemoteGuardrailClient`'s `WebClient` call has no configured timeout, so context startup can hang rather than error. Run `mvn test -Dtest='!LlmGatewayIntegrationTest'` for a quick unit-test-only pass, or start the sidecar first.
-
----
 
 ## Table of Contents
 
-- 🏗️ [Architecture Overview](#architecture-overview)
-- 🏗️ [Design Patterns (GoF)](#design-patterns-gof)
-- 🧰 [Tech Stack](#tech-stack)
-- 🔹 [Features](#features)
-- 🔹 [Prerequisites](#prerequisites)
-- 🚀 [Quick Start](#quick-start)
-- 🐳 [Docker Compose](#docker-compose)
-- 📚 [Configuration Reference](#configuration-reference)
-- 🔐 [Security — Keycloak / OAuth2 Authentication](#security--keycloak--oauth2-authentication)
-- 📚 [API Documentation](#api-documentation)
-- 🚪 [Gateway Architecture Deep Dive](#gateway-architecture-deep-dive)
-- 🤖 [Prompt Template System](#prompt-template-system)
-- 🔹 [Guardrail Chain](#guardrail-chain)
-- 🔹 [Guardrails Service (LangServe sidecar)](#guardrails-service-langserve-sidecar)
-- 📈 [Observability](#observability)
-- 🏗️ [Project Structure](#project-structure)
-- 🤖 [llm-openrouter Module](#llm-openrouter-module)
-- 🧰 [Technology Deep Dive](#technology-deep-dive)
+1. 🏗️ [Architecture Overview](#architecture-overview)
+2. 🏗️ [Design Patterns (GoF)](#design-patterns-gof)
+3. 🧰 [Tech Stack](#tech-stack)
+4. 🔹 [Features](#features)
+5. 🔹 [Prerequisites](#prerequisites)
+6. 🚀 [Quick Start](#quick-start)
+7. 🐳 [Docker Compose](#docker-compose)
+8. 📚 [Configuration Reference](#configuration-reference)
+9. 🔐 [Security — Keycloak / OAuth2 Authentication](#security--keycloak--oauth2-authentication)
+10. 📚 [API Documentation](#api-documentation)
+11. 🚪 [Gateway Architecture Deep Dive](#gateway-architecture-deep-dive)
+12. 🤖 [Prompt Template System](#prompt-template-system)
+13. 🔹 [Guardrail Chain](#guardrail-chain)
+14. 🔹 [Guardrails Service (LangServe sidecar)](#guardrails-service-langserve-sidecar)
+15. 📈 [Observability](#observability)
+16. 🏗️ [Project Structure](#project-structure)
+17. 🤖 [llm-openrouter Module](#llm-openrouter-module)
+18. 🧰 [Technology Deep Dive](#technology-deep-dive)
+19. 📋 [Changelog & Runtime Migration Notes](#changelog--runtime-migration-notes)
 
 ---
 
@@ -1938,3 +1853,93 @@ LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph /
 **What it is:** A tool for defining and running multi-container Docker applications from a single YAML file.
 
 **How it's used here:** `docker-compose.yml` defines all 9 services as a local development stack. Services reference each other by name (e.g. the gateway connects to `postgres:5432`, pgAdmin connects to `postgres`). Healthchecks on Postgres and Redis ensure dependent services only start when their dependency is truly ready.
+
+
+## Changelog & Runtime Migration Notes
+
+## What's New (v2.4)
+
+Split into a multi-module Maven reactor and added an OpenRouter-backed module:
+
+| # | Category | Change |
+|---|----------|--------|
+| 1 | **Restructuring** | The single-module `llm-gateway` project is now a thin aggregator (`packaging=pom`) over two child modules: `llm-gateway-core` (all the existing code, unchanged behavior) and the new `llm-openrouter`. |
+| 2 | **Feature** | Added `llm-openrouter` — a reactive Spring AI service that calls [OpenRouter](https://openrouter.ai)'s OpenAI-SDK-compatible API (`POST /openrouter/v1/chat`), with per-request model override (OpenRouter's vendor-prefixed ids, e.g. `anthropic/claude-3.5-sonnet`), Resilience4j retry/circuit-breaker, and the same Keycloak JWT resource-server auth as every other service on the platform. |
+| 3 | **Infra** | Added `llm-openrouter-client` to the shared Keycloak realm (`docker/keycloak/llm-gateway-realm.json`). |
+| 4 | **Build hygiene** | Stopped hardcoding third-party version numbers directly in module `pom.xml` files. `springdoc-openapi-starter-webflux-ui`'s version now comes from `learning-bom`'s `dependencyManagement` (a property + import, like every other managed dependency); `spotless-maven-plugin` and `org.owasp:dependency-check-maven`'s versions now come from `super-pom`'s `pluginManagement` (mirroring the existing `jacoco-maven-plugin` pattern). Module `pom.xml`s declare these without a `<version>`. |
+| 5 | **Docker** | The root `Dockerfile` is now parametrized by a `MODULE` build-arg (`llm-gateway-core` \| `llm-openrouter`), mirroring `llm-chat`'s multi-module Dockerfile pattern. |
+
+---
+
+## What's New (v2.3)
+
+Authentication moved from a custom X-API-Key/Postgres mechanism to Keycloak-issued OAuth2 JWTs:
+
+| # | Category      | Change                                                                                                                                                                                                                                                                                                                                           |
+|---|---------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 | **Breaking**  | `X-API-Key` header auth is **removed**. Every protected request now needs `Authorization: Bearer <jwt>`, where the JWT is issued by Keycloak.                                                                                                                                                                                                    |
+| 2 | **Security**  | `SecurityConfig` now configures `oauth2ResourceServer().jwt(...)` with a custom `JwtAuthenticationConverter` that maps Keycloak's `realm_access.roles` claim to `ROLE_*` authorities (Keycloak doesn't use the standard `scope` claim Spring Security reads by default).                                                                         |
+| 3 | **Removed**   | `ApiKeyService`, `AdminHandler`, and the `/admin/keys` CRUD endpoints are gone — there's no key registry to administer anymore; identity and lifecycle live in Keycloak.                                                                                                                                                                         |
+| 4 | **Database**  | Added `V4__drop_api_keys.sql` — drops the now-unused `api_keys` table (existing `V1`/`V2` migrations are left untouched per Flyway convention; history isn't rewritten).                                                                                                                                                                         |
+| 5 | **Infra**     | Added a `keycloak` service to `docker-compose.yml` (`quay.io/keycloak/keycloak`, dev mode, realm auto-imported from `docker/keycloak/llm-gateway-realm.json`) so OAuth2 works out of the box locally.                                                                                                                                            |
+| 6 | **Config**    | `spring.security.oauth2.resourceserver.jwt.issuer-uri` added, defaulting to the local Keycloak realm; override with `KEYCLOAK_ISSUER_URI` for any other deployment.                                                                                                                                                                              |
+| 7 | **Known gap** | `RequestLogService` audit rows still don't capture caller identity — `LlmGatewayFacade` has always passed `client_id = null` to the audit log (pre-existing, not introduced here). Wiring the JWT subject/`preferred_username` claim into the audit log is a natural follow-up now that every caller is authenticated, but is out of scope here. |
+
+---
+
+## What's New (v2.2)
+
+A Spring AI 2.0 alignment review plus a best-practices pass:
+
+| #  | Category                 | Change                                                                                                                                                                                                                                                                                                                  |
+|----|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1  | **Spring AI 2.0 review** | Audited every custom abstraction against Spring AI 2.0 out-of-box features (ChatClient/Advisors, `MessageChatMemoryAdvisor`, `@Tool`, `EmbeddingModel`, `ImageModel`, `PromptTemplate`, `.entity()` structured output). Verdict: the codebase already uses these idiomatically — there was very little left to replace. |
+| 2  | **Cleanup**              | Removed `PromptGuardAdvisor` — it was a pure pass-through that only logged prompt length; injection sanitization already happens upstream in `LlmGatewayFacade`. The advisor chain is now 8 steps, not 9.                                                                                                               |
+| 3  | **API versioning**       | Base path changed from `/llm` to `/llm/v1` (`spring.webflux.base-path`) so a future breaking v2 can coexist.                                                                                                                                                                                                            |
+| 4  | **Security**             | `gateway.cors.allowed-origins` was defined in config but never wired to anything — added a `CorsConfigurationSource` bean so it actually takes effect.                                                                                                                                                                  |
+| 5  | **Docs**                 | Functional routes (`LlmRouterConfig`) are now annotated with springdoc `@RouterOperation`/`@Operation`, so Swagger UI shows real summaries/descriptions/schemas instead of a bare skeleton.                                                                                                                             |
+| 6  | **Observability**        | Added k8s-style actuator health groups — `/actuator/health/readiness` (Redis + R2DBC + DB) and `/actuator/health/liveness`.                                                                                                                                                                                             |
+| 7  | **Containerization**     | Added a multi-stage `Dockerfile` (non-root user, `HEALTHCHECK`) and `.dockerignore` for the main app — previously only the guardrails sidecar had one.                                                                                                                                                                  |
+| 8  | **Security tooling**     | Added OWASP `dependency-check-maven`, opt-in via `mvn -P security-scan verify` (kept out of the default build — needs network/NVD access).                                                                                                                                                                              |
+| 9  | **Code quality**         | Added Spotless + Google Java Format, checked on every `mvn verify`.                                                                                                                                                                                                                                                     |
+| 10 | **CI**                   | `.github/workflows/ci.yml` now also runs `spotless:check`, a non-blocking OWASP scan job, and a non-blocking Docker build validation job.                                                                                                                                                                               |
+
+---
+
+## What's New (v2.1)
+
+Security, correctness, and feature improvements:
+
+| #  | Category        | Change                                                                                                                                       |
+|----|-----------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| 1  | **Security**    | Auth is now **enabled by default** — set `GATEWAY_AUTH_ENABLED=false` only for local dev                                                     |
+| 2  | **Security**    | Redis password enforced — `REDIS_PASSWORD` defaults to `gatewayredis` in both app and Docker Compose                                         |
+| 3  | **Security**    | X-Forwarded-For only trusted from configured `GATEWAY_TRUSTED_PROXIES` (prevents IP spoofing)                                                |
+| 4  | **Security**    | Dev seed keys in `V2__seed_api_keys.sql` carry a hard ROTATE warning                                                                         |
+| 5  | **Bug fix**     | `GlobalExceptionHandler` was a `@RestControllerAdvice` that never fired for functional routes — replaced with a proper `WebExceptionHandler` |
+| 6  | **Bug fix**     | `RedisChatMemoryRepository.findConversationIds()` used blocking `KEYS *` — replaced with non-blocking `SCAN` cursor                          |
+| 7  | **Bug fix**     | `LlmResponse.response` (duplicate of `content`, never populated) removed                                                                     |
+| 8  | **Bug fix**     | `CompletableFuture.supplyAsync` in auto-failover used ForkJoinPool — replaced with `Mono.fromCallable().subscribeOn(boundedElastic)`         |
+| 9  | **Reliability** | `Hooks.enableAutomaticContextPropagation()` called at startup — MDC values (traceId, requestId) now survive Reactor scheduler hops           |
+| 10 | **Reliability** | Streaming handler now runs the inbound guardrail chain, enforces a per-stream timeout, and returns structured error events on failure        |
+| 11 | **Performance** | `LlmMetricsService` pre-registers counters/timers at startup instead of rebuilding on every request                                          |
+| 12 | **Feature**     | `POST /llm/v1/embed` — vector embedding endpoint (OpenAI `text-embedding-3-small` by default)                                                |
+| 13 | **Feature**     | Admin API key management — `GET/POST /llm/v1/admin/keys`, `PATCH/DELETE /llm/v1/admin/keys/{id}`                                             |
+| 14 | **Feature**     | Audit log — every request persisted to `request_log` table (prompt hash, provider, tokens, latency; raw prompt never stored)                 |
+| 15 | **Feature**     | `GET /llm/v1/models` now returns the **configured** default model per provider, not a hardcoded list                                         |
+| 16 | **Docs**        | Swagger UI available at `/llm/v1/swagger-ui.html` (via `springdoc-openapi-starter-webflux-ui`)                                               |
+| 17 | **Config**      | `GATEWAY_TRUSTED_PROXIES` and `LLM_STREAM_TIMEOUT_SECONDS` added                                                                             |
+
+---
+
+## Runtime Migration: Java 21 → 25, Spring AI → 2.0.0
+
+This service now targets **Java 25** and **Spring AI 2.0.0** (up from Java 21 and Spring AI 2.0.0-M8), inherited from the shared `super-pom` / `llm-bom` chain — no module-level `java.version`, `maven.compiler.release`, or `spring-ai.version` override exists in this repo's `pom.xml`, so the bump required no POM edits here. The CI workflow (`.github/workflows/ci.yml`) was updated to provision JDK 25 via `actions/setup-java@v4` (it previously pinned JDK 21).
+
+**Verified in this environment** (JDK 25, Docker available):
+- `mvn -o compile` — succeeds under Azul Zulu 25.0.3.
+- `mvn clean test` with a real Docker daemon — **33 tests run / 0 skipped**. 22 pass cleanly. The 11 `LlmGatewayIntegrationTest` cases (now actually exercising real Testcontainers-backed Postgres 18 and Redis containers instead of being skipped) fail, but root-caused to the same pre-existing gap described below (`RemoteGuardrailClient` needs a `Tracer` bean that nothing in the codebase provides) — not a Docker- or migration-related regression. Fixed one genuine, Docker-surfaced bug along the way: Spring Boot's R2DBC Testcontainers service-connection factory (`PostgresR2dbcDatabaseContainerConnectionDetailsFactory`) needs `org.testcontainers:r2dbc` on the classpath, which was missing from `pom.xml` — only the JDBC-flavored `org.testcontainers:postgresql` module was declared. Added the `org.testcontainers:r2dbc` test dependency; this alone fixed the `NoClassDefFoundError: org/testcontainers/r2dbc/R2DBCDatabaseContainer` failure that previously prevented the R2DBC connection factory from initializing against the real container.
+- `docker compose up -d postgres redis` + `mvn spring-boot:run` — real boot attempted against live Postgres/Redis containers. Boot proceeds well past R2DBC/Redis repository scanning and bean creation, then fails at the same `UnsatisfiedDependencyException: ... required a bean of type 'io.micrometer.tracing.Tracer' that could not be found` while wiring `RemoteGuardrailClient`, confirming this is a **pre-existing gap in in-flight (uncommitted) tracing-propagation code**, unrelated to Docker, the Java/Spring AI bump, or the R2DBC fix above — `micrometer-tracing-bridge-otel` resolves correctly on the classpath, but no `Tracer` bean is produced anywhere in the codebase. Not fixed here since it's part of someone else's in-progress tracing work, outside this verification's scope.
+- **Heads up if you re-run `LlmGatewayIntegrationTest` directly:** without the guardrails sidecar running (`docker compose up -d guardrails`), it doesn't fail fast — `RemoteGuardrailClient`'s `WebClient` call has no configured timeout, so context startup can hang rather than error. Run `mvn test -Dtest='!LlmGatewayIntegrationTest'` for a quick unit-test-only pass, or start the sidecar first.
+
+---
