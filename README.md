@@ -348,6 +348,8 @@ The **Level 1 gateway guardrail chain** (as distinct from the Level 2 Spring AI 
 which only runs for the three `ChatClient`-backed providers) is a textbook GoF *Chain of
 Responsibility*, implemented in `guardrail/chain/`:
 
+<ul>
+
 - **`GuardrailStep`** — the handler interface. It extends `Ordered`; `getOrder()` determines
   position, and three numeric bands are reserved by convention (100/200/300, with gaps
   deliberately left for future steps to slot in between without renumbering everything else).
@@ -363,6 +365,8 @@ Responsibility*, implemented in `guardrail/chain/`:
   decoupling "something got rejected" from "audit-log it" / "alert on it"), and re-throws so the
   facade maps it to an HTTP 400.
 
+</ul>
+
 The three steps that make up the chain today:
 
 | Order | Step (class) | What it actually checks | Outcome |
@@ -374,6 +378,8 @@ The three steps that make up the chain today:
 Two properties of this design are worth calling out explicitly because they're easy to miss on a
 first read of the code:
 
+<ul>
+
 - **Steps run in a strict, fixed order, and each sees the *output* of the previous one** — step
   200 redacts PII from the prompt that step 100 already sanitized, and step 300 sends the sidecar
   the prompt with both the injection-sanitization *and* the PII redaction already applied. A raw,
@@ -384,6 +390,8 @@ first read of the code:
   chain automatically. This is the entire point of the Chain of Responsibility pattern here: the
   facade that invokes `GuardrailChain.apply(context)` never changes as guardrails are added,
   removed, or reordered.
+
+</ul>
 
 ### Sensitive-data redaction: what `SensitiveDataRedactor` actually catches
 
@@ -440,6 +448,8 @@ every other component that wants to emit a metric calls into this service rather
 `MeterRegistry` directly, which keeps metric names and tag keys consistent across the codebase.
 Two design choices are worth calling out:
 
+<ul>
+
 - **Pre-registration at startup.** `@PostConstruct preRegister()` eagerly creates the
   `llm.requests.total` counter (for every combination of a known provider and `cache_hit` in
   `{true, false}`) and the `llm.request.latency.seconds` histogram timer for every known provider
@@ -451,6 +461,8 @@ Two design choices are worth calling out:
   appear the first time a given provider is actually called.
 - **One method per operationally meaningful event**, not a generic `emit(name, tags)` API — this
   makes it easy to grep the codebase for exactly where a given signal is produced. The catalogue:
+
+</ul>
 
 | Method | Metric | Why it exists operationally |
 |---|---|---|
@@ -518,6 +530,8 @@ removes real coupling, not for its own sake:
 <a id="features"></a>
 ## 4. 🔹 Features
 
+<ul>
+
 - **Multi-provider routing** — single API, routed to OpenAI, Anthropic, Ollama, Google Gemini, Cohere, or HuggingFace
 - **Failover chain** — tries the next provider automatically on failure
 - **Multi-turn chat** — Redis-backed conversation memory per `session_id`
@@ -542,6 +556,8 @@ removes real coupling, not for its own sake:
 - **Provider enable/disable** — `@ConditionalOnProperty` per service; disabled providers never start
 - **Distributed tracing** — OTEL spans with trace/span IDs in every log line
 - **Prometheus metrics + Grafana dashboard** — calls per provider, REST API turnaround time (`@Timed` + `http.server.requests`), latency percentiles, token usage, cache hits, rejections, errors; importable/auto-provisioned dashboard included
+
+</ul>
 
 ---
 
@@ -860,6 +876,8 @@ when you get a 401.
 
 Everything is managed in Keycloak, not in this codebase:
 
+<ul>
+
 - New machine client → create another confidential client with `serviceAccountsEnabled`,
   assign it whichever realm role you need, in the Keycloak admin console (or extend
   `docker/keycloak/llm-gateway-realm.json` and re-run `docker compose up -d keycloak`
@@ -867,6 +885,8 @@ Everything is managed in Keycloak, not in this codebase:
 - New human user → create a user in the realm and assign realm roles.
 - Pointing at a different/production Keycloak → set `KEYCLOAK_ISSUER_URI` to that
   realm's issuer URL; no code changes needed.
+
+</ul>
 
 ### Authorizing by role (extension point)
 
@@ -1152,6 +1172,8 @@ LLM, cached, or logged — for every provider** (including the custom REST provi
 Google, Cohere, HuggingFace that bypass the advisor chain) — the `LlmGatewayFacade`
 applies a provider-agnostic `SensitiveDataRedactor`:
 
+<ul>
+
 - **Inbound** — the prompt is redacted *before* it is forwarded to any provider or
   written to the cache. Detected spans become typed placeholders (`[EMAIL]`,
   `[API_KEY]`, `[CREDIT_CARD]`, …).
@@ -1161,6 +1183,8 @@ applies a provider-agnostic `SensitiveDataRedactor`:
   raw prompt/response content (Spring AI's `SimpleLoggerAdvisor` stays at INFO, which
   suppresses full-content DEBUG logging).
 - **Metrics** — `llm_sensitive_data_redactions_total{provider, direction, type}`.
+
+</ul>
 
 Detected categories: e-mail, phone, credit-card, SSN, IBAN, IP address, passport, plus
 secrets — API keys (`sk-…`), AWS access keys (`AKIA…`), bearer tokens and PEM private keys.
@@ -1266,6 +1290,8 @@ curl http://localhost:8000/health      # liveness + whether the LLM judge is act
 curl http://localhost:8000/v1/checks   # active checks + current policy
 ```
 
+<ul>
+
 - `stage` is `"input"` (prompt, pre-LLM) or `"output"` (model answer, post-LLM).
 - When the sidecar returns `sanitized_text` (e.g. masked PII) on a passing result, the
   gateway forwards the sanitized version to the provider and marks the response
@@ -1275,15 +1301,21 @@ curl http://localhost:8000/v1/checks   # active checks + current policy
   emits an `AUDIT` log line via the `GuardrailViolationEvent` observer. Guardrail
   rejections are **never** auto-failed-over — the prompt is the problem, not the provider.
 
+</ul>
+
 ### Availability policy
 
 The call is wrapped in its own Resilience4j circuit breaker (`guardrails-service`). If the
 sidecar is down, times out, or the circuit is open:
 
+<ul>
+
 - **fail-open** (default) — the request continues without remote validation; a `WARN` is
   logged and `llm_requests_errors_total{provider="guardrails-service"}` increments.
 - **fail-closed** (`LLM_EXTERNAL_GUARDRAILS_FAIL_OPEN=false`) — the request is rejected;
   choose this when policy enforcement matters more than availability.
+
+</ul>
 
 The in-process chain steps (100/200) still run either way, so baseline protection never
 depends on the sidecar.
@@ -1348,9 +1380,13 @@ When `block-on-suspicion=false` (default), the advisor logs a `WARN` and increme
 
 `TokenCostService` estimates the USD cost of every LLM call from the prompt and completion token counts in the model's usage metadata, using a per-model rate table configured under `llm.cost.rates.*`. The estimated cost is:
 
+<ul>
+
 - Added as the `X-LLM-Cost-USD` response header on every `/query`, `/chat`, and `/failover` response
 - Logged at `INFO` level alongside provider, model, and token counts
 - Recorded as the Micrometer counter `llm_cost_usd_total{provider, model}` for Grafana dashboards
+
+</ul>
 
 To add or update a model's rate:
 
@@ -1795,8 +1831,12 @@ When the guardrails circuit is open the gateway either fails-open (continues wit
 
 **How it's used here:**
 
+<ul>
+
 - **Metrics** — `LlmMetricsService` uses Micrometer to emit counters and histograms (`llm_provider_calls_total`, `llm_request_latency_seconds`, etc.). The Micrometer Prometheus registry exposes them at `/llm/v1/actuator/prometheus`.
 - **Traces** — the `micrometer-tracing-bridge-otel` library connects Micrometer's tracing API to the OpenTelemetry SDK, which exports spans to Tempo via OTLP HTTP (`http://tempo:4318/v1/traces`). Every request gets a `traceId` that appears in logs and in Tempo.
+
+</ul>
 
 ---
 
@@ -1841,12 +1881,16 @@ LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph /
 **What it is:** An open-source observability platform for visualising metrics, logs, and traces.
 
 **How it's used here:** Runs at **http://localhost:3000** (admin/admin). Provisioned automatically with three datasources (Prometheus, Tempo, Loki) and the pre-built LLM Gateway dashboard. The dashboard shows:
+<ul>
+
 - Request rate and error rate per provider
 - p50/p95/p99 latency histograms
 - Cache hit rate
 - Guardrail rejection rate
 - Circuit breaker state
 - JVM memory and GC metrics
+
+</ul>
 
 ---
 
@@ -1956,9 +2000,13 @@ Security, correctness, and feature improvements:
 This service now targets **Java 25** and **Spring AI 2.0.0** (up from Java 21 and Spring AI 2.0.0-M8), inherited from the shared `super-pom` / `llm-bom` chain — no module-level `java.version`, `maven.compiler.release`, or `spring-ai.version` override exists in this repo's `pom.xml`, so the bump required no POM edits here. The CI workflow (`.github/workflows/ci.yml`) was updated to provision JDK 25 via `actions/setup-java@v4` (it previously pinned JDK 21).
 
 **Verified in this environment** (JDK 25, Docker available):
+<ul>
+
 - `mvn -o compile` — succeeds under Azul Zulu 25.0.3.
 - `mvn clean test` with a real Docker daemon — **33 tests run / 0 skipped**. 22 pass cleanly. The 11 `LlmGatewayIntegrationTest` cases (now actually exercising real Testcontainers-backed Postgres 18 and Redis containers instead of being skipped) fail, but root-caused to the same pre-existing gap described below (`RemoteGuardrailClient` needs a `Tracer` bean that nothing in the codebase provides) — not a Docker- or migration-related regression. Fixed one genuine, Docker-surfaced bug along the way: Spring Boot's R2DBC Testcontainers service-connection factory (`PostgresR2dbcDatabaseContainerConnectionDetailsFactory`) needs `org.testcontainers:r2dbc` on the classpath, which was missing from `pom.xml` — only the JDBC-flavored `org.testcontainers:postgresql` module was declared. Added the `org.testcontainers:r2dbc` test dependency; this alone fixed the `NoClassDefFoundError: org/testcontainers/r2dbc/R2DBCDatabaseContainer` failure that previously prevented the R2DBC connection factory from initializing against the real container.
 - `docker compose up -d postgres redis` + `mvn spring-boot:run` — real boot attempted against live Postgres/Redis containers. Boot proceeds well past R2DBC/Redis repository scanning and bean creation, then fails at the same `UnsatisfiedDependencyException: ... required a bean of type 'io.micrometer.tracing.Tracer' that could not be found` while wiring `RemoteGuardrailClient`, confirming this is a **pre-existing gap in in-flight (uncommitted) tracing-propagation code**, unrelated to Docker, the Java/Spring AI bump, or the R2DBC fix above — `micrometer-tracing-bridge-otel` resolves correctly on the classpath, but no `Tracer` bean is produced anywhere in the codebase. Not fixed here since it's part of someone else's in-progress tracing work, outside this verification's scope.
 - **Heads up if you re-run `LlmGatewayIntegrationTest` directly:** without the guardrails sidecar running (`docker compose up -d guardrails`), it doesn't fail fast — `RemoteGuardrailClient`'s `WebClient` call has no configured timeout, so context startup can hang rather than error. Run `mvn test -Dtest='!LlmGatewayIntegrationTest'` for a quick unit-test-only pass, or start the sidecar first.
+
+</ul>
 
 ---
