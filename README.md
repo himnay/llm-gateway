@@ -1881,6 +1881,7 @@ LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph /
 **What it is:** An open-source observability platform for visualising metrics, logs, and traces.
 
 **How it's used here:** Runs at **http://localhost:3000** (admin/admin). Provisioned automatically with three datasources (Prometheus, Tempo, Loki) and the pre-built LLM Gateway dashboard. The dashboard shows:
+
 <ul>
 
 - Request rate and error rate per provider
@@ -2000,6 +2001,7 @@ Security, correctness, and feature improvements:
 This service now targets **Java 25** and **Spring AI 2.0.0** (up from Java 21 and Spring AI 2.0.0-M8), inherited from the shared `super-pom` / `llm-bom` chain — no module-level `java.version`, `maven.compiler.release`, or `spring-ai.version` override exists in this repo's `pom.xml`, so the bump required no POM edits here. The CI workflow (`.github/workflows/ci.yml`) was updated to provision JDK 25 via `actions/setup-java@v4` (it previously pinned JDK 21).
 
 **Verified in this environment** (JDK 25, Docker available):
+
 <ul>
 
 - `mvn -o compile` — succeeds under Azul Zulu 25.0.3.
