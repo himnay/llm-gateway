@@ -36,7 +36,8 @@ model catalog).
 
 ---
 
-## Architecture Overview
+<a id="architecture-overview"></a>
+## 1. 🏗️ Architecture Overview
 
 ```
 Client
@@ -95,7 +96,8 @@ Client
 
 ---
 
-## Gateway Architecture Deep Dive
+<a id="gateway-architecture-deep-dive"></a>
+## 11. 🚪 Gateway Architecture Deep Dive
 
 This section is a from-first-principles walkthrough of what this repository actually *is* —
 an **LLM gateway** (sometimes called an "AI proxy" or "LLM control plane") — and how its four
@@ -471,7 +473,8 @@ running an LLM gateway in the first place.
 
 ---
 
-## Design Patterns (GoF)
+<a id="design-patterns-gof"></a>
+## 2. 🏗️ Design Patterns (GoF)
 
 The gateway is deliberately structured around Gang-of-Four patterns; each is applied where it
 removes real coupling, not for its own sake:
@@ -492,7 +495,8 @@ removes real coupling, not for its own sake:
 
 ---
 
-## Tech Stack
+<a id="tech-stack"></a>
+## 3. 🧰 Tech Stack
 
 | Layer            | Technology                                                            |
 |------------------|-----------------------------------------------------------------------|
@@ -511,7 +515,8 @@ removes real coupling, not for its own sake:
 
 ---
 
-## Features
+<a id="features"></a>
+## 4. 🔹 Features
 
 - **Multi-provider routing** — single API, routed to OpenAI, Anthropic, Ollama, Google Gemini, Cohere, or HuggingFace
 - **Failover chain** — tries the next provider automatically on failure
@@ -540,7 +545,8 @@ removes real coupling, not for its own sake:
 
 ---
 
-## Prerequisites
+<a id="prerequisites"></a>
+## 5. 🔹 Prerequisites
 
 | Requirement       | Version |
 |-------------------|---------|
@@ -552,7 +558,8 @@ removes real coupling, not for its own sake:
 
 ---
 
-## Quick Start
+<a id="quick-start"></a>
+## 6. 🚀 Quick Start
 
 ### 1. Clone and set environment variables
 
@@ -619,7 +626,8 @@ curl -X POST http://localhost:8080/llm/v1/query \
 
 ---
 
-## Docker Compose
+<a id="docker-compose"></a>
+## 7. 🐳 Docker Compose
 
 `docker-compose.yml` includes all infrastructure services:
 
@@ -645,7 +653,8 @@ docker compose up -d prometheus grafana tempo
 
 ---
 
-## Configuration Reference
+<a id="configuration-reference"></a>
+## 8. 📚 Configuration Reference
 
 All values can be overridden via environment variables.
 
@@ -759,7 +768,8 @@ Sidecar-side knobs (set on the `guardrails` container in `docker-compose.yml`):
 | `LLM_SENSITIVE_DATA_REDACT_PROMPT`     | `true`                                        | Redact before sending to provider                     |
 | `LLM_SENSITIVE_DATA_REDACT_RESPONSE`   | `true`                                        | Redact before returning to caller                     |
 
-### Observability
+<a id="observability"></a>
+### 15. 📈 Observability
 
 | Env Var                       | Default                 |
 |-------------------------------|-------------------------|
@@ -767,7 +777,8 @@ Sidecar-side knobs (set on the `guardrails` container in `docker-compose.yml`):
 
 ---
 
-## Security — Keycloak / OAuth2 Authentication
+<a id="security--keycloak--oauth2-authentication"></a>
+## 9. 🔐 Security — Keycloak / OAuth2 Authentication
 
 ### How it works
 
@@ -870,7 +881,8 @@ model, where any valid key could call anything). To restrict an endpoint to
 
 ---
 
-## API Documentation
+<a id="api-documentation"></a>
+## 10. 📚 API Documentation
 
 Base URL: `http://localhost:8080/llm/v1`
 
@@ -1060,7 +1072,8 @@ Response includes `embedding` (float array), `dimensions`, `model`, and `provide
 
 ---
 
-## Prompt Template System
+<a id="prompt-template-system"></a>
+## 12. 🤖 Prompt Template System
 
 System prompts live in `.st` files under `llm-gateway-core/src/main/resources/prompts/`. Each provider has its own template.
 
@@ -1090,7 +1103,8 @@ System prompts live in `.st` files under `llm-gateway-core/src/main/resources/pr
 
 ---
 
-## Guardrail Chain
+<a id="guardrail-chain"></a>
+## 13. 🔹 Guardrail Chain
 
 Guardrails run at **two levels**:
 
@@ -1198,7 +1212,8 @@ llm:
 
 ---
 
-## Guardrails Service (LangServe sidecar)
+<a id="guardrails-service-langserve-sidecar"></a>
+## 14. 🔹 Guardrails Service (LangServe sidecar)
 
 A FastAPI + **LangServe** service in `guardrails-service/`, built on the official
 **`langchain/langchain`** Docker image, that the gateway consults over REST **before
@@ -1387,7 +1402,8 @@ Runtime feature flags under `app.features.*` allow individual gateway capabiliti
 
 ---
 
-## Project Structure
+<a id="project-structure"></a>
+## 16. 🏗️ Project Structure
 
 A multi-module Maven reactor — the root `pom.xml` is a thin aggregator (`packaging=pom`); all
 code lives in the child modules below.
@@ -1529,7 +1545,8 @@ Uses the HuggingFace Serverless Inference API with its OpenAI-compatible endpoin
 
 ---
 
-## llm-openrouter Module
+<a id="llm-openrouter-module"></a>
+## 17. 🤖 llm-openrouter Module
 
 A separate, independently runnable module (port `8085`) that talks to
 [OpenRouter](https://openrouter.ai) — a single API that routes to many vendors' models, addressed
@@ -1652,7 +1669,8 @@ Maven repository — pass it in via the `maven_settings` BuildKit secret, not ba
 
 ---
 
-## Technology Deep Dive
+<a id="technology-deep-dive"></a>
+## 18. 🧰 Technology Deep Dive
 
 A plain-English explanation of every technology in this repo — what it is and exactly how this project uses it.
 
@@ -1855,7 +1873,8 @@ LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph /
 **How it's used here:** `docker-compose.yml` defines all 9 services as a local development stack. Services reference each other by name (e.g. the gateway connects to `postgres:5432`, pgAdmin connects to `postgres`). Healthchecks on Postgres and Redis ensure dependent services only start when their dependency is truly ready.
 
 
-## Changelog & Runtime Migration Notes
+<a id="changelog--runtime-migration-notes"></a>
+## 19. 📋 Changelog & Runtime Migration Notes
 
 ## What's New (v2.4)
 
