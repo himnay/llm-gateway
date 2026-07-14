@@ -15,20 +15,20 @@ model catalog).
 ## Table of Contents
 
 1. 🏗️ [Architecture Overview](#architecture-overview)
-2. 🏗️ [Design Patterns (GoF)](#design-patterns-gof)
-3. 🧰 [Tech Stack](#tech-stack)
-4. 🔹 [Features](#features)
-5. 🔹 [Prerequisites](#prerequisites)
-6. 🚀 [Quick Start](#quick-start)
-7. 🐳 [Docker Compose](#docker-compose)
-8. 📚 [Configuration Reference](#configuration-reference)
-9. 🔐 [Security — Keycloak / OAuth2 Authentication](#security--keycloak--oauth2-authentication)
-10. 📚 [API Documentation](#api-documentation)
-11. 🚪 [Gateway Architecture Deep Dive](#gateway-architecture-deep-dive)
-12. 🤖 [Prompt Template System](#prompt-template-system)
-13. 🔹 [Guardrail Chain](#guardrail-chain)
-14. 🔹 [Guardrails Service (LangServe sidecar)](#guardrails-service-langserve-sidecar)
-15. 📈 [Observability](#observability)
+2. 🚪 [Gateway Architecture Deep Dive](#gateway-architecture-deep-dive)
+3. 🏗️ [Design Patterns (GoF)](#design-patterns-gof)
+4. 🧰 [Tech Stack](#tech-stack)
+5. 🔹 [Features](#features)
+6. 🔹 [Prerequisites](#prerequisites)
+7. 🚀 [Quick Start](#quick-start)
+8. 🐳 [Docker Compose](#docker-compose)
+9. 📚 [Configuration Reference](#configuration-reference)
+10. 📈 [Observability](#observability)
+11. 🔐 [Security — Keycloak / OAuth2 Authentication](#security--keycloak--oauth2-authentication)
+12. 📚 [API Documentation](#api-documentation)
+13. 🤖 [Prompt Template System](#prompt-template-system)
+14. 🔹 [Guardrail Chain](#guardrail-chain)
+15. 🔹 [Guardrails Service (LangServe sidecar)](#guardrails-service-langserve-sidecar)
 16. 🏗️ [Project Structure](#project-structure)
 17. 🤖 [llm-openrouter Module](#llm-openrouter-module)
 18. 🧰 [Technology Deep Dive](#technology-deep-dive)
@@ -97,7 +97,7 @@ Client
 ---
 
 <a id="gateway-architecture-deep-dive"></a>
-## 11. 🚪 Gateway Architecture Deep Dive
+## 2. 🚪 Gateway Architecture Deep Dive
 
 This section is a from-first-principles walkthrough of what this repository actually *is* —
 an **LLM gateway** (sometimes called an "AI proxy" or "LLM control plane") — and how its four
@@ -486,7 +486,7 @@ running an LLM gateway in the first place.
 ---
 
 <a id="design-patterns-gof"></a>
-## 2. 🏗️ Design Patterns (GoF)
+## 3. 🏗️ Design Patterns (GoF)
 
 The gateway is deliberately structured around Gang-of-Four patterns; each is applied where it
 removes real coupling, not for its own sake:
@@ -508,7 +508,7 @@ removes real coupling, not for its own sake:
 ---
 
 <a id="tech-stack"></a>
-## 3. 🧰 Tech Stack
+## 4. 🧰 Tech Stack
 
 | Layer            | Technology                                                            |
 |------------------|-----------------------------------------------------------------------|
@@ -528,7 +528,7 @@ removes real coupling, not for its own sake:
 ---
 
 <a id="features"></a>
-## 4. 🔹 Features
+## 5. 🔹 Features
 
 <ul>
 
@@ -562,7 +562,7 @@ removes real coupling, not for its own sake:
 ---
 
 <a id="prerequisites"></a>
-## 5. 🔹 Prerequisites
+## 6. 🔹 Prerequisites
 
 | Requirement       | Version |
 |-------------------|---------|
@@ -575,7 +575,7 @@ removes real coupling, not for its own sake:
 ---
 
 <a id="quick-start"></a>
-## 6. 🚀 Quick Start
+## 7. 🚀 Quick Start
 
 ### 1. Clone and set environment variables
 
@@ -643,7 +643,7 @@ curl -X POST http://localhost:8080/llm/v1/query \
 ---
 
 <a id="docker-compose"></a>
-## 7. 🐳 Docker Compose
+## 8. 🐳 Docker Compose
 
 `docker-compose.yml` includes all infrastructure services:
 
@@ -670,7 +670,7 @@ docker compose up -d prometheus grafana tempo
 ---
 
 <a id="configuration-reference"></a>
-## 8. 📚 Configuration Reference
+## 9. 📚 Configuration Reference
 
 All values can be overridden via environment variables.
 
@@ -785,7 +785,7 @@ Sidecar-side knobs (set on the `guardrails` container in `docker-compose.yml`):
 | `LLM_SENSITIVE_DATA_REDACT_RESPONSE`   | `true`                                        | Redact before returning to caller                     |
 
 <a id="observability"></a>
-### 15. 📈 Observability
+## 10. 📈 Observability
 
 | Env Var                       | Default                 |
 |-------------------------------|-------------------------|
@@ -794,7 +794,7 @@ Sidecar-side knobs (set on the `guardrails` container in `docker-compose.yml`):
 ---
 
 <a id="security--keycloak--oauth2-authentication"></a>
-## 9. 🔐 Security — Keycloak / OAuth2 Authentication
+## 11. 🔐 Security — Keycloak / OAuth2 Authentication
 
 ### How it works
 
@@ -902,7 +902,7 @@ model, where any valid key could call anything). To restrict an endpoint to
 ---
 
 <a id="api-documentation"></a>
-## 10. 📚 API Documentation
+## 12. 📚 API Documentation
 
 Base URL: `http://localhost:8080/llm/v1`
 
@@ -1093,7 +1093,7 @@ Response includes `embedding` (float array), `dimensions`, `model`, and `provide
 ---
 
 <a id="prompt-template-system"></a>
-## 12. 🤖 Prompt Template System
+## 13. 🤖 Prompt Template System
 
 System prompts live in `.st` files under `llm-gateway-core/src/main/resources/prompts/`. Each provider has its own template.
 
@@ -1124,7 +1124,7 @@ System prompts live in `.st` files under `llm-gateway-core/src/main/resources/pr
 ---
 
 <a id="guardrail-chain"></a>
-## 13. 🔹 Guardrail Chain
+## 14. 🔹 Guardrail Chain
 
 Guardrails run at **two levels**:
 
@@ -1237,7 +1237,7 @@ llm:
 ---
 
 <a id="guardrails-service-langserve-sidecar"></a>
-## 14. 🔹 Guardrails Service (LangServe sidecar)
+## 15. 🔹 Guardrails Service (LangServe sidecar)
 
 A FastAPI + **LangServe** service in `guardrails-service/`, built on the official
 **`langchain/langchain`** Docker image, that the gateway consults over REST **before
