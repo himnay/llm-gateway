@@ -18,12 +18,12 @@ The gateway uses **Spring Boot Actuator + Micrometer** with the Prometheus regis
 (`micrometer-registry-prometheus`). The following endpoints are exposed (see
 `application.yaml` → `management.endpoints.web.exposure.include`):
 
-| Endpoint                         | Purpose                                              |
-|----------------------------------|------------------------------------------------------|
-| `/llm/v1/actuator/health`           | Liveness/readiness + component health (redis, r2dbc) |
-| `/llm/v1/actuator/metrics`          | Browse individual metrics (JSON)                     |
-| `/llm/v1/actuator/prometheus`       | **Prometheus scrape endpoint** (text exposition)     |
-| `/llm/v1/actuator/circuitbreakers`  | Resilience4j circuit-breaker state                   |
+| Endpoint                           | Purpose                                              |
+|------------------------------------|------------------------------------------------------|
+| `/llm/v1/actuator/health`          | Liveness/readiness + component health (redis, r2dbc) |
+| `/llm/v1/actuator/metrics`         | Browse individual metrics (JSON)                     |
+| `/llm/v1/actuator/prometheus`      | **Prometheus scrape endpoint** (text exposition)     |
+| `/llm/v1/actuator/circuitbreakers` | Resilience4j circuit-breaker state                   |
 
 > **Important — the `/llm/v1` prefix.** The app sets `spring.webflux.base-path: /llm/v1`,
 > so the actuator endpoints live under `/llm/v1/actuator/...`, **not** `/actuator/...`.
@@ -59,17 +59,17 @@ These are emitted by `LlmMetricsService` and the `@Timed` annotation on the gate
 facade. Use them to see **how many LLM calls go to each provider**, token usage, and
 turnaround time.
 
-| Metric (Prometheus name)              | Type       | Key labels                       | Meaning |
-|---------------------------------------|------------|----------------------------------|---------|
-| `llm_provider_calls_total`            | counter    | `provider`, `model`, `outcome`   | **Calls routed to each provider** (success/error) |
-| `llm_requests_total`                  | counter    | `provider`, `cache_hit`          | Total requests, incl. cache hits |
-| `llm_requests_errors_total`           | counter    | `provider`, `error_type`         | Errors by type |
-| `llm_requests_rejected_total`         | counter    | `provider`, `reason`             | Requests blocked by guardrails |
-| `llm_request_latency_seconds`         | histogram  | `provider`                       | Per-provider LLM call latency |
-| `llm_tokens_total`                    | counter    | `provider`, `model`, `type`      | Token usage (prompt/completion/total) |
-| `llm_prompt_length_chars`             | summary    | `provider`                       | Prompt size distribution |
-| `llm_gateway_execution_seconds`       | timer (`@Timed`) | `operation`                | **Gateway turnaround time** (execute / failover / auto-failover) |
-| `http_server_requests_seconds`        | timer (built-in) | `uri`, `method`, `status`  | **REST API turnaround time per endpoint** |
+| Metric (Prometheus name)        | Type             | Key labels                     | Meaning                                                          |
+|---------------------------------|------------------|--------------------------------|------------------------------------------------------------------|
+| `llm_provider_calls_total`      | counter          | `provider`, `model`, `outcome` | **Calls routed to each provider** (success/error)                |
+| `llm_requests_total`            | counter          | `provider`, `cache_hit`        | Total requests, incl. cache hits                                 |
+| `llm_requests_errors_total`     | counter          | `provider`, `error_type`       | Errors by type                                                   |
+| `llm_requests_rejected_total`   | counter          | `provider`, `reason`           | Requests blocked by guardrails                                   |
+| `llm_request_latency_seconds`   | histogram        | `provider`                     | Per-provider LLM call latency                                    |
+| `llm_tokens_total`              | counter          | `provider`, `model`, `type`    | Token usage (prompt/completion/total)                            |
+| `llm_prompt_length_chars`       | summary          | `provider`                     | Prompt size distribution                                         |
+| `llm_gateway_execution_seconds` | timer (`@Timed`) | `operation`                    | **Gateway turnaround time** (execute / failover / auto-failover) |
+| `http_server_requests_seconds`  | timer (built-in) | `uri`, `method`, `status`      | **REST API turnaround time per endpoint**                        |
 
 Example PromQL:
 
@@ -177,11 +177,11 @@ Use the **Provider** and **Application** template variables at the top to filter
 
 ## 6. Troubleshooting
 
-| Symptom | Cause / Fix |
-|---------|-------------|
-| Prometheus target DOWN | Wrong path — must be `/llm/v1/actuator/prometheus`. Confirm the app is on `:8080`. |
-| Target DOWN on Linux | `host.docker.internal` not resolvable — add `extra_hosts: ["host.docker.internal:host-gateway"]` to the prometheus service. |
-| No `llm_*` metrics | They register lazily on first use — send a request to `POST /llm/v1/query` first. |
-| p95 panels empty | Histogram buckets need `percentiles-histogram` (already set) **and** at least one request to populate buckets. |
-| Dashboard shows “No data” | Check the **Application** variable equals `llm-gateway` and the time range covers recent traffic. |
-| Grafana dashboard missing | Ensure `./observability/grafana/dashboards` is mounted to `/etc/dashboards` (see `docker-compose.yml`). |
+| Symptom                   | Cause / Fix                                                                                                                 |
+|---------------------------|-----------------------------------------------------------------------------------------------------------------------------|
+| Prometheus target DOWN    | Wrong path — must be `/llm/v1/actuator/prometheus`. Confirm the app is on `:8080`.                                          |
+| Target DOWN on Linux      | `host.docker.internal` not resolvable — add `extra_hosts: ["host.docker.internal:host-gateway"]` to the prometheus service. |
+| No `llm_*` metrics        | They register lazily on first use — send a request to `POST /llm/v1/query` first.                                           |
+| p95 panels empty          | Histogram buckets need `percentiles-histogram` (already set) **and** at least one request to populate buckets.              |
+| Dashboard shows “No data” | Check the **Application** variable equals `llm-gateway` and the time range covers recent traffic.                           |
+| Grafana dashboard missing | Ensure `./observability/grafana/dashboards` is mounted to `/etc/dashboards` (see `docker-compose.yml`).                     |
