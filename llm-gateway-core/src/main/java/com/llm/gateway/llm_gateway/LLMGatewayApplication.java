@@ -8,7 +8,7 @@ import reactor.core.publisher.Hooks;
 
 @SpringBootApplication
 @EnableConfigurationProperties(FeatureFlagProperties.class)
-public class LLMGatewayApplication {
+class LLMGatewayApplication {
 
   public static void main(String[] args) {
     // Propagates ThreadLocal (MDC) values across Reactor scheduler hops automatically.
