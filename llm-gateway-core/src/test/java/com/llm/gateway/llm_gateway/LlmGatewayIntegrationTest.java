@@ -35,8 +35,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
       "management.endpoint.health.group.readiness.include=readinessState"
     })
 @Import(TestcontainersConfiguration.class)
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers(disabledWithoutDocker = true)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class LlmGatewayIntegrationTest {
 
   @LocalServerPort private int port;

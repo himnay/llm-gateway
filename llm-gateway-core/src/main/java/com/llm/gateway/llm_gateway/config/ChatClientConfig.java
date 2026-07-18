@@ -50,8 +50,8 @@ public class ChatClientConfig {
   private final ChatMemory chatMemory;
   private final FeatureFlagProperties featureFlags;
 
-  @Bean("openAiChatClient")
   @Primary
+  @Bean("openAiChatClient")
   public ChatClient openAiChatClient(OpenAiChatModel model) {
     return ChatClient.builder(model).defaultAdvisors(standardAdvisors()).build();
   }
