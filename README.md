@@ -29,10 +29,14 @@ model catalog).
 13. 🤖 [Prompt Template System](#prompt-template-system)
 14. 🔹 [Guardrail Chain](#guardrail-chain)
 15. 🔹 [Guardrails Service (LangServe sidecar)](#guardrails-service-langserve-sidecar)
-16. 🏗️ [Project Structure](#project-structure)
-17. 🤖 [llm-openrouter Module](#llm-openrouter-module)
-18. 🧰 [Technology Deep Dive](#technology-deep-dive)
-19. 📋 [Changelog & Runtime Migration Notes](#changelog--runtime-migration-notes)
+16. 🚩 [Feature Flags](#feature-flags)
+17. 🏗️ [Project Structure](#project-structure)
+18. 🤝 [Insomnia Collection](#insomnia-collection)
+19. 🤖 [Provider API Details](#provider-api-details)
+20. 🤖 [llm-openrouter Module](#llm-openrouter-module)
+21. 🔨 [Building](#building)
+22. 🧰 [Technology Deep Dive](#technology-deep-dive)
+23. 📋 [Changelog & Runtime Migration Notes](#changelog--runtime-migration-notes)
 
 ---
 
@@ -793,6 +797,107 @@ Sidecar-side knobs (set on the `guardrails` container in `docker-compose.yml`):
 
 ---
 
+> **Full setup guide:** see **[PROMETHEUS_GRAFANA_SETUP.md](PROMETHEUS_GRAFANA_SETUP.md)**
+> for the end-to-end Prometheus + Grafana walkthrough, PromQL examples, and troubleshooting.
+
+### Prometheus metrics
+
+Exposed at `GET /llm/v1/actuator/prometheus`.
+
+> **Note the `/llm/v1` prefix** — `spring.webflux.base-path=/llm/v1` also prefixes the actuator
+> endpoints, so the scrape path is `/llm/v1/actuator/prometheus` (configured in
+> `observability/prometheus.yml`).
+
+Custom application metrics (emitted by `LlmMetricsService` + the `@Timed` facade):
+
+| Metric (Prometheus name)        | Type             | Labels                         | Meaning                                                          |
+|---------------------------------|------------------|--------------------------------|------------------------------------------------------------------|
+| `llm_provider_calls_total`      | counter          | `provider`, `model`, `outcome` | **Calls routed to each provider** (success/error)                |
+| `llm_requests_total`            | counter          | `provider`, `cache_hit`        | Total requests incl. cache hits                                  |
+| `llm_requests_errors_total`     | counter          | `provider`, `error_type`       | Errors by type                                                   |
+| `llm_requests_rejected_total`   | counter          | `provider`, `reason`           | Requests blocked by guardrails                                   |
+| `llm_request_latency_seconds`   | histogram        | `provider`                     | Per-provider LLM call latency (p50/p95/p99)                      |
+| `llm_tokens_total`              | counter          | `provider`, `model`, `type`    | Token usage (prompt/completion/total)                            |
+| `llm_prompt_length_chars`       | summary          | `provider`                     | Prompt size distribution                                         |
+| `llm_gateway_execution_seconds` | timer (`@Timed`) | `operation`                    | **Gateway turnaround time** (execute / failover / auto-failover) |
+| `http_server_requests_seconds`  | timer (built-in) | `uri`, `method`, `status`      | **REST API turnaround time per endpoint**                        |
+
+Histogram buckets are enabled for latency metrics (`management.metrics.distribution.percentiles-histogram`)
+so Grafana can compute percentiles.
+
+### Grafana dashboard
+
+An importable dashboard lives at
+`observability/grafana/dashboards/grafana-dashboard-llm-gateway.json`. With Docker Compose
+it is **auto-provisioned** (appears under *Dashboards → LLM Gateway* at <http://localhost:3000>,
+`admin`/`admin`). It visualises calls per provider, REST API turnaround time, latency
+percentiles, token usage, errors, circuit-breaker state, and JVM/system health.
+
+### Distributed Tracing
+
+Every request creates an OTEL span `llm.request`. Trace and span IDs appear in every log line via MDC. Structured extraction creates a separate `llm.structured` span.
+
+### HallucinationMonitorAdvisor
+
+`HallucinationMonitorAdvisor` is advisor step ⑧ in the Spring AI chain. It scores the model's response for uncertainty signals (hedging phrases, contradictions, vague references) and records the score as a Micrometer gauge. Behavior is controlled by two properties:
+
+| Env Var                   | Property                                          | Default | Description                                                                                           |
+|---------------------------|---------------------------------------------------|---------|-------------------------------------------------------------------------------------------------------|
+| `HALLUCINATION_THRESHOLD` | `llm.guardrails.hallucination.threshold`          | `0.7`   | Suspicion score (0.0–1.0) above which the response is flagged                                         |
+| `HALLUCINATION_BLOCK`     | `llm.guardrails.hallucination.block-on-suspicion` | `false` | When `true`, responses that exceed the threshold are rejected with HTTP 422 instead of being returned |
+| `INJECTION_GUARD_ENABLED` | `llm.guardrails.injection-guard.enabled`          | `true`  | Master switch for prompt-injection regex patterns in the Level-1 `prompt-sanitization` guardrail step |
+
+When `block-on-suspicion=false` (default), the advisor logs a `WARN` and increments `llm_hallucination_suspects_total` but still returns the response to the caller — useful for monitoring before enforcement. Set `block-on-suspicion=true` in production environments where factual accuracy is critical.
+
+### Cost Tracking (`TokenCostService`)
+
+`TokenCostService` estimates the USD cost of every LLM call from the prompt and completion token counts in the model's usage metadata, using a per-model rate table configured under `llm.cost.rates.*`. The estimated cost is:
+
+<ul>
+
+- Added as the `X-LLM-Cost-USD` response header on every `/query`, `/chat`, and `/failover` response
+- Logged at `INFO` level alongside provider, model, and token counts
+- Recorded as the Micrometer counter `llm_cost_usd_total{provider, model}` for Grafana dashboards
+
+</ul>
+
+To add or update a model's rate:
+
+```yaml
+llm:
+  cost:
+    rates:
+      gpt-4o: 0.000005          # USD per token (prompt rate; completion rate = 2x by default)
+      claude-3-5-sonnet: 0.000003
+```
+
+### Actuator endpoints
+
+| Endpoint                            | Description                                        |
+|-------------------------------------|----------------------------------------------------|
+| `/llm/v1/actuator/health`           | Spring Boot health (includes Redis probe)          |
+| `/llm/v1/actuator/health/readiness` | k8s `readinessProbe` — Redis + R2DBC + DB included |
+| `/llm/v1/actuator/health/liveness`  | k8s `livenessProbe` — process liveness only        |
+| `/llm/v1/actuator/metrics`          | Browse individual metrics (JSON)                   |
+| `/llm/v1/actuator/prometheus`       | Prometheus scrape                                  |
+| `/llm/v1/actuator/circuitbreakers`  | Resilience4j state                                 |
+| `/llm/v1/actuator/loggers`          | Runtime log level changes                          |
+
+Example k8s deployment probes:
+
+```yaml
+readinessProbe:
+  httpGet: { path: /llm/v1/actuator/health/readiness, port: 8080 }
+  initialDelaySeconds: 10
+livenessProbe:
+  httpGet: { path: /llm/v1/actuator/health/liveness, port: 8080 }
+  initialDelaySeconds: 20
+```
+
+---
+
+---
+
 <a id="security--keycloak--oauth2-authentication"></a>
 ## 11. 🔐 Security — Keycloak / OAuth2 Authentication
 
@@ -1322,108 +1427,8 @@ depends on the sidecar.
 
 ---
 
-## Observability
-
-> **Full setup guide:** see **[PROMETHEUS_GRAFANA_SETUP.md](PROMETHEUS_GRAFANA_SETUP.md)**
-> for the end-to-end Prometheus + Grafana walkthrough, PromQL examples, and troubleshooting.
-
-### Prometheus metrics
-
-Exposed at `GET /llm/v1/actuator/prometheus`.
-
-> **Note the `/llm/v1` prefix** — `spring.webflux.base-path=/llm/v1` also prefixes the actuator
-> endpoints, so the scrape path is `/llm/v1/actuator/prometheus` (configured in
-> `observability/prometheus.yml`).
-
-Custom application metrics (emitted by `LlmMetricsService` + the `@Timed` facade):
-
-| Metric (Prometheus name)        | Type             | Labels                         | Meaning                                                          |
-|---------------------------------|------------------|--------------------------------|------------------------------------------------------------------|
-| `llm_provider_calls_total`      | counter          | `provider`, `model`, `outcome` | **Calls routed to each provider** (success/error)                |
-| `llm_requests_total`            | counter          | `provider`, `cache_hit`        | Total requests incl. cache hits                                  |
-| `llm_requests_errors_total`     | counter          | `provider`, `error_type`       | Errors by type                                                   |
-| `llm_requests_rejected_total`   | counter          | `provider`, `reason`           | Requests blocked by guardrails                                   |
-| `llm_request_latency_seconds`   | histogram        | `provider`                     | Per-provider LLM call latency (p50/p95/p99)                      |
-| `llm_tokens_total`              | counter          | `provider`, `model`, `type`    | Token usage (prompt/completion/total)                            |
-| `llm_prompt_length_chars`       | summary          | `provider`                     | Prompt size distribution                                         |
-| `llm_gateway_execution_seconds` | timer (`@Timed`) | `operation`                    | **Gateway turnaround time** (execute / failover / auto-failover) |
-| `http_server_requests_seconds`  | timer (built-in) | `uri`, `method`, `status`      | **REST API turnaround time per endpoint**                        |
-
-Histogram buckets are enabled for latency metrics (`management.metrics.distribution.percentiles-histogram`)
-so Grafana can compute percentiles.
-
-### Grafana dashboard
-
-An importable dashboard lives at
-`observability/grafana/dashboards/grafana-dashboard-llm-gateway.json`. With Docker Compose
-it is **auto-provisioned** (appears under *Dashboards → LLM Gateway* at <http://localhost:3000>,
-`admin`/`admin`). It visualises calls per provider, REST API turnaround time, latency
-percentiles, token usage, errors, circuit-breaker state, and JVM/system health.
-
-### Distributed Tracing
-
-Every request creates an OTEL span `llm.request`. Trace and span IDs appear in every log line via MDC. Structured extraction creates a separate `llm.structured` span.
-
-### HallucinationMonitorAdvisor
-
-`HallucinationMonitorAdvisor` is advisor step ⑧ in the Spring AI chain. It scores the model's response for uncertainty signals (hedging phrases, contradictions, vague references) and records the score as a Micrometer gauge. Behavior is controlled by two properties:
-
-| Env Var                   | Property                                          | Default | Description                                                                                           |
-|---------------------------|---------------------------------------------------|---------|-------------------------------------------------------------------------------------------------------|
-| `HALLUCINATION_THRESHOLD` | `llm.guardrails.hallucination.threshold`          | `0.7`   | Suspicion score (0.0–1.0) above which the response is flagged                                         |
-| `HALLUCINATION_BLOCK`     | `llm.guardrails.hallucination.block-on-suspicion` | `false` | When `true`, responses that exceed the threshold are rejected with HTTP 422 instead of being returned |
-| `INJECTION_GUARD_ENABLED` | `llm.guardrails.injection-guard.enabled`          | `true`  | Master switch for prompt-injection regex patterns in the Level-1 `prompt-sanitization` guardrail step |
-
-When `block-on-suspicion=false` (default), the advisor logs a `WARN` and increments `llm_hallucination_suspects_total` but still returns the response to the caller — useful for monitoring before enforcement. Set `block-on-suspicion=true` in production environments where factual accuracy is critical.
-
-### Cost Tracking (`TokenCostService`)
-
-`TokenCostService` estimates the USD cost of every LLM call from the prompt and completion token counts in the model's usage metadata, using a per-model rate table configured under `llm.cost.rates.*`. The estimated cost is:
-
-<ul>
-
-- Added as the `X-LLM-Cost-USD` response header on every `/query`, `/chat`, and `/failover` response
-- Logged at `INFO` level alongside provider, model, and token counts
-- Recorded as the Micrometer counter `llm_cost_usd_total{provider, model}` for Grafana dashboards
-
-</ul>
-
-To add or update a model's rate:
-
-```yaml
-llm:
-  cost:
-    rates:
-      gpt-4o: 0.000005          # USD per token (prompt rate; completion rate = 2x by default)
-      claude-3-5-sonnet: 0.000003
-```
-
-### Actuator endpoints
-
-| Endpoint                            | Description                                        |
-|-------------------------------------|----------------------------------------------------|
-| `/llm/v1/actuator/health`           | Spring Boot health (includes Redis probe)          |
-| `/llm/v1/actuator/health/readiness` | k8s `readinessProbe` — Redis + R2DBC + DB included |
-| `/llm/v1/actuator/health/liveness`  | k8s `livenessProbe` — process liveness only        |
-| `/llm/v1/actuator/metrics`          | Browse individual metrics (JSON)                   |
-| `/llm/v1/actuator/prometheus`       | Prometheus scrape                                  |
-| `/llm/v1/actuator/circuitbreakers`  | Resilience4j state                                 |
-| `/llm/v1/actuator/loggers`          | Runtime log level changes                          |
-
-Example k8s deployment probes:
-
-```yaml
-readinessProbe:
-  httpGet: { path: /llm/v1/actuator/health/readiness, port: 8080 }
-  initialDelaySeconds: 10
-livenessProbe:
-  httpGet: { path: /llm/v1/actuator/health/liveness, port: 8080 }
-  initialDelaySeconds: 20
-```
-
----
-
-## Feature Flags
+<a id="feature-flags"></a>
+## 16. 🚩 Feature Flags
 
 Runtime feature flags under `app.features.*` allow individual gateway capabilities to be toggled without a code change or redeployment. Each flag has a matching environment variable.
 
@@ -1439,7 +1444,7 @@ Runtime feature flags under `app.features.*` allow individual gateway capabiliti
 ---
 
 <a id="project-structure"></a>
-## 16. 🏗️ Project Structure
+## 17. 🏗️ Project Structure
 
 A multi-module Maven reactor — the root `pom.xml` is a thin aggregator (`packaging=pom`); all
 code lives in the child modules below.
@@ -1525,7 +1530,8 @@ PROMETHEUS_GRAFANA_SETUP.md               Prometheus + Grafana setup guide
 
 ---
 
-## Insomnia Collection
+<a id="insomnia-collection"></a>
+## 18. 🤝 Insomnia Collection
 
 Import `insomnia-collection.json` into Insomnia to get all endpoints pre-configured.
 
@@ -1559,7 +1565,8 @@ Import `insomnia-collection.json` into Insomnia to get all endpoints pre-configu
 
 ---
 
-## Provider API Details
+<a id="provider-api-details"></a>
+## 19. 🤖 Provider API Details
 
 ### OpenAI / Anthropic / Ollama
 Implemented via Spring AI `ChatClient` — full guardrail chain, chat memory, streaming, structured output, tool calling.
@@ -1582,7 +1589,7 @@ Uses the HuggingFace Serverless Inference API with its OpenAI-compatible endpoin
 ---
 
 <a id="llm-openrouter-module"></a>
-## 17. 🤖 llm-openrouter Module
+## 20. 🤖 llm-openrouter Module
 
 A separate, independently runnable module (port `8085`) that talks to
 [OpenRouter](https://openrouter.ai) — a single API that routes to many vendors' models, addressed
@@ -1637,7 +1644,8 @@ can rate-limit or time out, same reasoning as `llm-gateway-core`'s per-provider 
 
 ---
 
-## Building
+<a id="building"></a>
+## 21. 🔨 Building
 
 `mvn` at the repo root builds the whole reactor (both modules). Target one module with `-pl`:
 
@@ -1706,7 +1714,7 @@ Maven repository — pass it in via the `maven_settings` BuildKit secret, not ba
 ---
 
 <a id="technology-deep-dive"></a>
-## 18. 🧰 Technology Deep Dive
+## 22. 🧰 Technology Deep Dive
 
 A plain-English explanation of every technology in this repo — what it is and exactly how this project uses it.
 
@@ -1919,9 +1927,9 @@ LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph /
 
 
 <a id="changelog--runtime-migration-notes"></a>
-## 19. 📋 Changelog & Runtime Migration Notes
+## 23. 📋 Changelog & Runtime Migration Notes
 
-## What's New (v2.4)
+### What's New (v2.4)
 
 Split into a multi-module Maven reactor and added an OpenRouter-backed module:
 
@@ -1935,7 +1943,7 @@ Split into a multi-module Maven reactor and added an OpenRouter-backed module:
 
 ---
 
-## What's New (v2.3)
+### What's New (v2.3)
 
 Authentication moved from a custom X-API-Key/Postgres mechanism to Keycloak-issued OAuth2 JWTs:
 
@@ -1951,7 +1959,7 @@ Authentication moved from a custom X-API-Key/Postgres mechanism to Keycloak-issu
 
 ---
 
-## What's New (v2.2)
+### What's New (v2.2)
 
 A Spring AI 2.0 alignment review plus a best-practices pass:
 
@@ -1970,7 +1978,7 @@ A Spring AI 2.0 alignment review plus a best-practices pass:
 
 ---
 
-## What's New (v2.1)
+### What's New (v2.1)
 
 Security, correctness, and feature improvements:
 
@@ -1996,7 +2004,7 @@ Security, correctness, and feature improvements:
 
 ---
 
-## Runtime Migration: Java 21 → 25, Spring AI → 2.0.0
+### Runtime Migration: Java 21 → 25, Spring AI → 2.0.0
 
 This service now targets **Java 25** and **Spring AI 2.0.0** (up from Java 21 and Spring AI 2.0.0-M8), inherited from the shared `super-pom` / `llm-bom` chain — no module-level `java.version`, `maven.compiler.release`, or `spring-ai.version` override exists in this repo's `pom.xml`, so the bump required no POM edits here. The CI workflow (`.github/workflows/ci.yml`) was updated to provision JDK 25 via `actions/setup-java@v4` (it previously pinned JDK 21).
 
