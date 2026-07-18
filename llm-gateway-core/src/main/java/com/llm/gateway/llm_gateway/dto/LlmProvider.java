@@ -18,11 +18,13 @@ public enum LlmProvider {
     this.key = key;
   }
 
+  /** Returns the key. */
   @JsonValue
   public String key() {
     return key;
   }
 
+  /** Returns the from key. */
   @JsonCreator
   public static LlmProvider fromKey(String key) {
     for (LlmProvider p : values()) {

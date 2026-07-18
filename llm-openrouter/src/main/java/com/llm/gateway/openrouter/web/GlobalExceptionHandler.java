@@ -13,6 +13,7 @@ import org.springframework.web.bind.support.WebExchangeBindException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+  /** Handles validation. */
   @ExceptionHandler(WebExchangeBindException.class)
   public ResponseEntity<Map<String, Object>> handleValidation(WebExchangeBindException ex) {
     String message =
@@ -23,6 +24,7 @@ public class GlobalExceptionHandler {
     return ResponseEntity.badRequest().body(Map.of("error", message));
   }
 
+  /** Handles generic. */
   @ExceptionHandler(Exception.class)
   public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
     log.error("OPENROUTER | unhandled error | {}", ex.getMessage(), ex);

@@ -243,6 +243,7 @@ public class LlmRouterConfig {
                 description =
                     "Clears all Redis-stored conversation history for the given session id.",
                 parameters = {
+  /** Defines the llm routes bean. */
                   @Parameter(
                       name = "sessionId",
                       in = ParameterIn.PATH,

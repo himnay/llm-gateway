@@ -12,11 +12,13 @@ public final class AdvisorUtils {
 
   private AdvisorUtils() {}
 
+  /** Extracts user text. */
   public static String extractUserText(ChatClientRequest request) {
     var msg = request.prompt().getUserMessage();
     return msg != null ? msg.getText() : null;
   }
 
+  /** Extracts response text. */
   public static String extractResponseText(ChatClientResponse response) {
     if (response.chatResponse() == null) return null;
     Generation result = response.chatResponse().getResult();

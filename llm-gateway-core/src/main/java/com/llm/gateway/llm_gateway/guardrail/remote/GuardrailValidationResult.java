@@ -13,6 +13,7 @@ import java.util.List;
 public record GuardrailValidationResult(
     boolean passed, List<String> violations, String sanitizedText, double riskScore) {
 
+  /** Returns the passed result. */
   public static GuardrailValidationResult passedResult() {
     return new GuardrailValidationResult(true, List.of(), null, -1);
   }

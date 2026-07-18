@@ -22,6 +22,7 @@ public class StartupValidator {
 
   private final LlmProviderProperties providerProperties;
 
+  /** Validates provider keys. */
   @EventListener(ApplicationStartedEvent.class)
   public void validateProviderKeys() {
     if (providerProperties.getProviders() == null) return;

@@ -50,6 +50,7 @@ public class LlmHandler {
 
   // ── Routes ────────────────────────────────────────────────────────────────
 
+  /** Queries. */
   public Mono<ServerResponse> query(ServerRequest req) {
     String cid = correlationId(req);
     return req.bodyToMono(LlmRequest.class)
@@ -208,6 +209,7 @@ public class LlmHandler {
         .onErrorResume(this::errorResponse);
   }
 
+  /** Returns the providers. */
   public Mono<ServerResponse> providers(ServerRequest req) {
     Set<String> registered = facade.getRegisteredProviders();
     return ok(Map.of("count", registered.size(), "providers", registered));

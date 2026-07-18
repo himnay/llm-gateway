@@ -31,6 +31,7 @@ public class ImageService {
 
   private final ImageModel imageModel;
 
+  /** Generates. */
   public ImageGenerationResponse generate(ImageGenerationRequest request) {
     long start = System.currentTimeMillis();
     String model = blankTo(request.getModel(), DEFAULT_MODEL);

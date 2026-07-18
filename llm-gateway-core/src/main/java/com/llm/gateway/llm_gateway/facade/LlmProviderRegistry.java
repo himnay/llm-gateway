@@ -51,10 +51,12 @@ public class LlmProviderRegistry {
     return provider;
   }
 
+  /** Returns the contains. */
   public boolean contains(String name) {
     return providers.containsKey(name.toLowerCase());
   }
 
+  /** Returns the names. */
   public Set<String> names() {
     return providers.keySet();
   }

@@ -42,6 +42,7 @@ public class GuardrailContext {
     }
   }
 
+  /** Adds warnings. */
   public void addWarnings(List<String> newWarnings) {
     if (newWarnings != null) {
       warnings.addAll(newWarnings);

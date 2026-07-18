@@ -65,6 +65,7 @@ public class GatewayTools {
     };
   }
 
+  /** Returns the estimate token cost. */
   @Tool(
       description =
           "Calculate the estimated cost in USD for a given number of input and output tokens "

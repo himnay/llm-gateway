@@ -107,6 +107,7 @@ public class OllamaService implements LlmServiceProvider {
     }
   }
 
+  /** Streams. */
   public Flux<String> stream(LlmRequest request) {
     String model = request.getModel() != null ? request.getModel() : defaultModel;
     String systemText = promptTemplateService.renderSystemPrompt(PROVIDER, request);

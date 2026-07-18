@@ -11,12 +11,14 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class ChatMemoryConfig {
 
+  /** Defines the in memory chat memory repository bean. */
   @Bean
   @Qualifier("inMemoryChatMemoryRepository")
   public ChatMemoryRepository inMemoryChatMemoryRepository() {
     return new InMemoryChatMemoryRepository();
   }
 
+  /** Defines the chat memory bean. */
   @Bean
   public ChatMemory chatMemory(ChatMemoryRepository repository) {
     return MessageWindowChatMemory.builder()

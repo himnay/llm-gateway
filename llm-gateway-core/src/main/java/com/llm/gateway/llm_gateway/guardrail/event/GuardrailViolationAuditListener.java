@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class GuardrailViolationAuditListener {
 
+  /** Handles violation. */
   @EventListener
   public void onViolation(GuardrailViolationEvent event) {
     log.warn(

@@ -24,6 +24,7 @@ public class OpenRouterService {
 
   private final ChatClient openRouterChatClient;
 
+  /** Chats. */
   @Retry(name = "openrouter", fallbackMethod = "retryFallback")
   @CircuitBreaker(name = "openrouter", fallbackMethod = "circuitBreakerFallback")
   public OpenRouterResponse chat(OpenRouterRequest request) {
@@ -61,12 +62,14 @@ public class OpenRouterService {
         .build();
   }
 
+  /** Returns the circuit breaker fallback. */
   public OpenRouterResponse circuitBreakerFallback(OpenRouterRequest request, Throwable ex) {
     log.warn("OPENROUTER | CIRCUIT_OPEN | {}", ex.getMessage());
     return errorResponse(
         request, "OpenRouter temporarily unavailable (circuit open). Please retry later.");
   }
 
+  /** Retries fallback. */
   public OpenRouterResponse retryFallback(OpenRouterRequest request, Throwable ex) {
     log.error("OPENROUTER | RETRY_EXHAUSTED | {}", ex.getMessage());
     return errorResponse(request, "OpenRouter failed after multiple retries: " + ex.getMessage());

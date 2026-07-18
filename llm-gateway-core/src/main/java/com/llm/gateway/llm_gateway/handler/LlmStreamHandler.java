@@ -53,6 +53,7 @@ public class LlmStreamHandler {
   @Value("${llm.stream.timeout-seconds:120}")
   private int streamTimeoutSeconds;
 
+  /** Streams. */
   public Mono<ServerResponse> stream(ServerRequest req) {
     if (!featureFlags.isStreamingEnabled()) {
       return ServerResponse.status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)

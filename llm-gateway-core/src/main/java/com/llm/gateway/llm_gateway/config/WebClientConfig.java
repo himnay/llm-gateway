@@ -47,6 +47,7 @@ public class WebClientConfig {
                 }));
   }
 
+  /** Defines the web client bean. */
   @Bean
   public WebClient webClient() {
     HttpClient httpClient =

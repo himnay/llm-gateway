@@ -120,6 +120,7 @@ public class LlmGatewayFacade {
     this.featureFlags = featureFlags;
   }
 
+  /** Executes. */
   @Timed(
       value = "llm.gateway.execution",
       description = "End-to-end turnaround time of a single gateway LLM call",
@@ -536,6 +537,7 @@ public class LlmGatewayFacade {
     }
   }
 
+  /** Returns the circuit breaker fallback. */
   public LlmResponse circuitBreakerFallback(String providerName, LlmRequest request, Throwable ex) {
     log.warn("CIRCUIT_OPEN | Provider={} | {}", providerName, ex.getMessage());
     metricsService.recordError(providerName, "CIRCUIT_OPEN");
@@ -543,6 +545,7 @@ public class LlmGatewayFacade {
         providerName, "Provider temporarily unavailable (circuit open). Please retry later.");
   }
 
+  /** Retries fallback. */
   public LlmResponse retryFallback(String providerName, LlmRequest request, Throwable ex) {
     log.error("RETRY_EXHAUSTED | Provider={} | {}", providerName, ex.getMessage());
     metricsService.recordError(providerName, "RETRY_EXHAUSTED");

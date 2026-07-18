@@ -10,6 +10,7 @@ import reactor.core.publisher.Hooks;
 @EnableConfigurationProperties(FeatureFlagProperties.class)
 class LLMGatewayApplication {
 
+  /** Application entry point. */
   public static void main(String[] args) {
     // Propagates ThreadLocal (MDC) values across Reactor scheduler hops automatically.
     // Requires Reactor 3.6+ (included via Spring Boot 3.2+).

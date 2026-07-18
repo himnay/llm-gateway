@@ -38,6 +38,7 @@ public class SecurityConfig {
   @Value("${gateway.cors.allowed-origins:}")
   private List<String> allowedOrigins;
 
+  /** Defines the security web filter chain bean. */
   @Bean
   public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
     http.csrf(c -> c.disable())
@@ -71,6 +72,7 @@ public class SecurityConfig {
         .build();
   }
 
+  /** Defines the cors configuration source bean. */
   @Bean
   public CorsConfigurationSource corsConfigurationSource() {
     List<String> origins = allowedOrigins.stream().filter(o -> !o.isBlank()).toList();

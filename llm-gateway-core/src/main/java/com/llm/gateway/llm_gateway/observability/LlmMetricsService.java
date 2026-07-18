@@ -86,6 +86,7 @@ public class LlmMetricsService {
     log.info("METRICS | pre-registered meters for {} providers", KNOWN_PROVIDERS.size());
   }
 
+  /** Records request. */
   public void recordRequest(String provider, boolean cacheHit) {
     String key = provider + ":" + cacheHit;
     Counter c = requestCounters.get(key);
@@ -98,6 +99,7 @@ public class LlmMetricsService {
     }
   }
 
+  /** Records provider call. */
   public void recordProviderCall(String provider, String model, String outcome) {
     meterRegistry
         .counter(
@@ -111,6 +113,7 @@ public class LlmMetricsService {
         .increment();
   }
 
+  /** Records token usage. */
   public void recordTokenUsage(
       String provider,
       String model,
@@ -136,6 +139,7 @@ public class LlmMetricsService {
         .increment(count);
   }
 
+  /** Records latency. */
   public void recordLatency(String provider, long latencyMs) {
     Timer t = latencyTimers.get(provider);
     if (t != null) {
@@ -151,18 +155,22 @@ public class LlmMetricsService {
     log.debug("METRICS | latency recorded | provider={} | latencyMs={}", provider, latencyMs);
   }
 
+  /** Records prompt length. */
   public void recordPromptLength(String provider, int length) {
     meterRegistry.summary(METRIC_PROMPT_LEN, "provider", provider).record(length);
   }
 
+  /** Records cache hit. */
   public void recordCacheHit(String provider) {
     recordRequest(provider, true);
   }
 
+  /** Records error. */
   public void recordError(String provider, String errorType) {
     meterRegistry.counter(METRIC_ERRORS, "provider", provider, "error_type", errorType).increment();
   }
 
+  /** Records sensitive data redaction. */
   public void recordSensitiveDataRedaction(
       String provider, String direction, Iterable<String> types) {
     for (String type : types) {
@@ -179,6 +187,7 @@ public class LlmMetricsService {
     }
   }
 
+  /** Records rejected request. */
   public void recordRejectedRequest(String provider, String reason) {
     meterRegistry.counter(METRIC_REJECTED, "provider", provider, "reason", reason).increment();
     log.info("METRICS | request rejected | provider={} | reason={}", provider, reason);

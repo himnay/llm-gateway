@@ -50,17 +50,20 @@ public class ChatClientConfig {
   private final ChatMemory chatMemory;
   private final FeatureFlagProperties featureFlags;
 
+  /** Defines the open ai chat client bean. */
   @Primary
   @Bean("openAiChatClient")
   public ChatClient openAiChatClient(OpenAiChatModel model) {
     return ChatClient.builder(model).defaultAdvisors(standardAdvisors()).build();
   }
 
+  /** Defines the anthropic chat client bean. */
   @Bean("anthropicChatClient")
   public ChatClient anthropicChatClient(AnthropicChatModel model) {
     return ChatClient.builder(model).defaultAdvisors(standardAdvisors()).build();
   }
 
+  /** Defines the ollama chat client bean. */
   @Bean("ollamaChatClient")
   public ChatClient ollamaChatClient(OllamaChatModel model) {
     return ChatClient.builder(model).defaultAdvisors(standardAdvisors()).build();

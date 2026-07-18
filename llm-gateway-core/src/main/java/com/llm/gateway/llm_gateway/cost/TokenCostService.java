@@ -40,6 +40,7 @@ public class TokenCostService {
 
     public record CostSummary(String model, int inputTokens, int outputTokens, double estimatedCostUsd) {}
 
+    /** Summarizes. */
     public CostSummary summarize(String model, int inputTokens, int outputTokens) {
         return new CostSummary(model, inputTokens, outputTokens, estimateCost(model, inputTokens, outputTokens));
     }

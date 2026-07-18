@@ -27,6 +27,7 @@ public class OpenRouterController {
 
   private final OpenRouterService openRouterService;
 
+  /** Chats. */
   @PostMapping("/chat")
   @Operation(
       operationId = "chat",

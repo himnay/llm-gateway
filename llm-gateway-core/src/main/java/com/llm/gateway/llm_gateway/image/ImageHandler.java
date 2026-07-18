@@ -29,6 +29,7 @@ public class ImageHandler {
   @Value("${llm.image.timeout-seconds:60}")
   private int timeoutSeconds;
 
+  /** Generates. */
   public Mono<ServerResponse> generate(ServerRequest req) {
     String cid = correlationId(req);
     return req.bodyToMono(ImageGenerationRequest.class)

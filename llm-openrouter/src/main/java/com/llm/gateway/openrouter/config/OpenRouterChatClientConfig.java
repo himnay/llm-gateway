@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class OpenRouterChatClientConfig {
 
+  /** Defines the open router chat client bean. */
   @Bean
   public ChatClient openRouterChatClient(OpenAiChatModel model) {
     return ChatClient.builder(model).defaultAdvisors(new SimpleLoggerAdvisor()).build();

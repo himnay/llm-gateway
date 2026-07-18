@@ -34,6 +34,7 @@ public class EmbeddingHandler {
     this.embeddingModel = embeddingModel;
   }
 
+  /** Embeds. */
   public Mono<ServerResponse> embed(ServerRequest req) {
     String cid =
         Optional.ofNullable(req.headers().firstHeader("X-Request-ID"))
