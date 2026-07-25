@@ -218,6 +218,11 @@ public class LlmHandler {
   /**
    * Returns the configured default model for each enabled provider, plus well-known alternatives.
    * The configured default is always listed first.
+   *
+   * <p>"Enabled" here means {@code llm.providers.<name>.enabled=true} in configuration — this is a
+   * static catalog derived purely from config, independent of which providers the live facade /
+   * registry has actually instantiated at runtime (that liveness view is what {@link
+   * #providers(ServerRequest)} reports instead).
    */
   public Mono<ServerResponse> models(ServerRequest req) {
     // Static known alternatives per provider (superset of what might be configured)
@@ -236,15 +241,14 @@ public class LlmHandler {
             "cohere", List.of("command-r-plus", "command-r", "command-light"));
 
     Map<String, Object> result = new HashMap<>();
-    Set<String> enabledProviders = facade.getRegisteredProviders();
 
     if (providerProperties.getProviders() != null) {
       providerProperties
           .getProviders()
           .forEach(
               (provider, cfg) -> {
+                if (!cfg.isEnabled()) return;
                 String key = provider.key();
-                if (!enabledProviders.contains(key)) return;
                 List<String> alts = alternatives.getOrDefault(key, List.of());
                 List<String> models = new java.util.ArrayList<>();
                 // Configured default first if different from the alternatives default
@@ -257,10 +261,6 @@ public class LlmHandler {
                 result.put(key, models);
               });
     }
-
-    // Fall back to hardcoded list for any enabled provider not in config map
-    enabledProviders.forEach(
-        key -> result.computeIfAbsent(key, k -> alternatives.getOrDefault(k, List.of())));
 
     return ok(result);
   }
@@ -349,7 +349,9 @@ public class LlmHandler {
       return ServerResponse.badRequest()
           .bodyValue(Map.of("error", "Prompt validation failed", "details", pve.getViolations()));
     }
-    if (ex instanceof InvalidRequestException || ex instanceof LLMProviderNotSupportedException) {
+    if (ex instanceof InvalidRequestException
+        || ex instanceof LLMProviderNotSupportedException
+        || ex instanceof IllegalArgumentException) {
       return ServerResponse.badRequest().bodyValue(Map.of("error", ex.getMessage()));
     }
     if (ex instanceof TimeoutException) {
