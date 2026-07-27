@@ -75,7 +75,6 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- OpenAPI / Swagger UI — version managed by learning-bom -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
@@ -188,9 +187,6 @@
     </build>
 
     <profiles>
-        <!-- Run with: mvn -P security-scan verify
-             Kept out of the default lifecycle since it needs network access to the
-             NVD feed (or NVD_API_KEY) and isn't appropriate for offline/local builds. -->
         <profile>
             <id>security-scan</id>
             <build>
