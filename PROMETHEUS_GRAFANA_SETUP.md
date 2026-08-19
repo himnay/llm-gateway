@@ -1,4 +1,4 @@
-# <span style="color:hsl(215,68%,44%)">Prometheus + Grafana Setup — LLM Gateway</span>
+# <span style="color:hsl(215,80%,58%)">Prometheus + Grafana Setup — LLM Gateway</span>
 
 This guide explains how metrics flow from the LLM Gateway into Prometheus and how to
 visualise them in Grafana, including the importable dashboard shipped in this repo.
@@ -12,7 +12,7 @@ visualise them in Grafana, including the importable dashboard shipped in this re
 
 ---
 
-## <span style="color:hsl(245,68%,44%)">1. What the app exposes</span>
+## <span style="color:hsl(353,80%,58%)">1. What the app exposes</span>
 
 The gateway uses **Spring Boot Actuator + Micrometer** with the Prometheus registry
 (`micrometer-registry-prometheus`). The following endpoints are exposed (see
@@ -36,7 +36,7 @@ Quick check once the app is running:
 curl -s http://localhost:8080/llm/v1/actuator/prometheus | grep llm_provider_calls_total
 ```
 
-### <span style="color:hsl(275,68%,44%)">Histogram buckets (latency percentiles)</span>
+### <span style="color:hsl(130,80%,58%)">Histogram buckets (latency percentiles)</span>
 
 `application.yaml` enables Prometheus histogram buckets so Grafana can compute
 p50/p95/p99 latency:
@@ -53,7 +53,7 @@ management:
 
 ---
 
-## <span style="color:hsl(305,68%,44%)">2. Custom metrics reference</span>
+## <span style="color:hsl(268,80%,58%)">2. Custom metrics reference</span>
 
 These are emitted by `LlmMetricsService` and the `@Timed` annotation on the gateway
 facade. Use them to see **how many LLM calls go to each provider**, token usage, and
@@ -87,7 +87,7 @@ sum by (provider) (rate(llm_tokens_total{type="total"}[5m]))
 
 ---
 
-## <span style="color:hsl(335,68%,44%)">3. Run the stack</span>
+## <span style="color:hsl(45,80%,50%)">3. Run the stack</span>
 
 Everything (Postgres, Redis, Prometheus, Grafana, Tempo, Loki) is defined in
 `docker-compose.yml`.
@@ -107,7 +107,7 @@ The app listens on `:8080`. Prometheus scrapes it via `host.docker.internal:8080
 
 ---
 
-## <span style="color:hsl(5,68%,44%)">4. Prometheus</span>
+## <span style="color:hsl(183,80%,58%)">4. Prometheus</span>
 
 Config: `observability/prometheus.yml`
 
@@ -133,16 +133,16 @@ curl -X POST http://localhost:9090/-/reload
 
 ---
 
-## <span style="color:hsl(35,68%,44%)">5. Grafana</span>
+## <span style="color:hsl(320,80%,58%)">5. Grafana</span>
 
 URL: <http://localhost:3000>  •  default login: `admin` / `admin`
 
-### <span style="color:hsl(65,68%,32%)">Data source (auto-provisioned)</span>
+### <span style="color:hsl(98,80%,58%)">Data source (auto-provisioned)</span>
 
 `observability/grafana/provisioning/datasources/datasources.yml` already wires up the
 Prometheus data source (uid `prometheus`), plus Tempo and Loki.
 
-### <span style="color:hsl(95,68%,32%)">Dashboard</span>
+### <span style="color:hsl(235,80%,58%)">Dashboard</span>
 
 The dashboard is **auto-provisioned**. On startup Grafana loads every JSON under
 `observability/grafana/dashboards/` (mounted to `/etc/dashboards`), so the
@@ -151,7 +151,7 @@ The dashboard is **auto-provisioned**. On startup Grafana loads every JSON under
 
 Provisioning config: `observability/grafana/provisioning/dashboards/dashboards.yml`.
 
-### <span style="color:hsl(125,68%,32%)">Manual import (alternative)</span>
+### <span style="color:hsl(13,80%,58%)">Manual import (alternative)</span>
 
 If you prefer importing by hand (e.g. into a different Grafana):
 
@@ -160,7 +160,7 @@ If you prefer importing by hand (e.g. into a different Grafana):
    `observability/grafana/dashboards/grafana-dashboard-llm-gateway.json`.
 3. Select your Prometheus data source when prompted → **Import**.
 
-### <span style="color:hsl(155,68%,36%)">What the dashboard shows</span>
+### <span style="color:hsl(150,80%,58%)">What the dashboard shows</span>
 
 - **Overview** — total calls, call rate, error rate, cache-hit ratio, total tokens, rejections.
 - **Per-Provider Routing** — calls per provider, distribution donut, success/error
@@ -175,7 +175,7 @@ Use the **Provider** and **Application** template variables at the top to filter
 
 ---
 
-## <span style="color:hsl(185,68%,36%)">6. Troubleshooting</span>
+## <span style="color:hsl(288,80%,58%)">6. Troubleshooting</span>
 
 | Symptom                   | Cause / Fix                                                                                                                 |
 |---------------------------|-----------------------------------------------------------------------------------------------------------------------------|
