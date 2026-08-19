@@ -1,4 +1,4 @@
-# LLM Gateway
+# <span style="color:hsl(224,68%,44%)">LLM Gateway</span>
 
 <img src="image/spring-logo.png" alt="logo" width="80"/>
 
@@ -12,7 +12,7 @@ model catalog).
 ---
 
 
-## Table of Contents
+## <span style="color:hsl(227,68%,44%)">Table of Contents</span>
 
 1. 🏗️ [Architecture Overview](#architecture-overview)
 2. 🚪 [Gateway Architecture Deep Dive](#gateway-architecture-deep-dive)
@@ -41,7 +41,7 @@ model catalog).
 ---
 
 <a id="architecture-overview"></a>
-## 1. 🏗️ Architecture Overview
+## <span style="color:hsl(231,68%,44%)">1. 🏗️ Architecture Overview</span>
 
 ```
 Client
@@ -101,7 +101,7 @@ Client
 ---
 
 <a id="gateway-architecture-deep-dive"></a>
-## 2. 🚪 Gateway Architecture Deep Dive
+## <span style="color:hsl(234,68%,44%)">2. 🚪 Gateway Architecture Deep Dive</span>
 
 This section is a from-first-principles walkthrough of what this repository actually *is* —
 an **LLM gateway** (sometimes called an "AI proxy" or "LLM control plane") — and how its four
@@ -111,7 +111,7 @@ just configured. Everything below is grounded directly in `llm-gateway-core`'s s
 `cache/`, `guardrail/`, `security/`, and `observability/` — file and class names are given so you
 can jump straight to the code.
 
-### What is an LLM gateway, and why not call OpenAI/Anthropic directly?
+### <span style="color:hsl(237,68%,44%)">What is an LLM gateway, and why not call OpenAI/Anthropic directly?</span>
 
 An **LLM gateway** is a thin service that every LLM call in an organisation is routed through,
 instead of application code calling `api.openai.com` or `api.anthropic.com` directly. It exists
@@ -146,7 +146,7 @@ infrastructure (Redis, Postgres) to what could otherwise be a stateless SDK call
 is that the centralised guardrails, caching, and observability are worth that hop — and the code
 in `cache/`, `guardrail/`, and `observability/` below is what actually pays for that bet.
 
-### Component diagram
+### <span style="color:hsl(240,68%,44%)">Component diagram</span>
 
 ```mermaid
 flowchart TB
@@ -206,7 +206,7 @@ flowchart TB
     OpenRouter --> OpenRouterAPI["OpenRouter API\n(openrouter.ai)"]
 ```
 
-### Sequence diagram — one representative `/query` request
+### <span style="color:hsl(244,68%,44%)">Sequence diagram — one representative `/query` request</span>
 
 The diagram below traces a single `POST /llm/v1/query` call end-to-end, showing the guardrail
 chain's fixed execution order (100 → 200 → 300) and the two places the request can short-circuit:
@@ -285,7 +285,7 @@ sequenceDiagram
     Facade-->>Client: 200 LlmResponse {content, cache_hit, latency_ms, ...}
 ```
 
-### Two-tier prompt cache: exact-match + semantic similarity
+### <span style="color:hsl(247,68%,44%)">Two-tier prompt cache: exact-match + semantic similarity</span>
 
 `cache/PromptCacheService.java` and `cache/SemanticPromptCache.java` implement a deliberately
 layered cache, because "same prompt" and "same *meaning*" are different problems with different
@@ -346,7 +346,7 @@ succeeded. The cost/benefit is explicit in the class Javadoc: it's off by defaul
 exact-cache miss now costs one embedding API call* — you're trading a guaranteed small embedding
 cost against a probabilistic chance of avoiding a much larger completion cost.
 
-### The guardrail chain: Chain of Responsibility, precisely
+### <span style="color:hsl(250,68%,44%)">The guardrail chain: Chain of Responsibility, precisely</span>
 
 The **Level 1 gateway guardrail chain** (as distinct from the Level 2 Spring AI advisor chain,
 which only runs for the three `ChatClient`-backed providers) is a textbook GoF *Chain of
@@ -397,7 +397,7 @@ first read of the code:
 
 </ul>
 
-### Sensitive-data redaction: what `SensitiveDataRedactor` actually catches
+### <span style="color:hsl(253,68%,44%)">Sensitive-data redaction: what `SensitiveDataRedactor` actually catches</span>
 
 `security/SensitiveDataRedactor.java` is the single source of truth for PII/secret detection
 across the *entire* gateway — it's invoked both by chain step 200 (covering every provider,
@@ -445,7 +445,7 @@ Spring AI advisor chain, it applies uniformly whether the request goes to OpenAI
 or to Cohere via a hand-rolled `RestClient` call — there is exactly one place PII/secret detection
 lives, not six.
 
-### What `LlmMetricsService` tracks, and why it matters operationally
+### <span style="color:hsl(257,68%,44%)">What `LlmMetricsService` tracks, and why it matters operationally</span>
 
 `observability/LlmMetricsService.java` is the gateway's single Micrometer integration point —
 every other component that wants to emit a metric calls into this service rather than touching
@@ -490,7 +490,7 @@ running an LLM gateway in the first place.
 ---
 
 <a id="design-patterns-gof"></a>
-## 3. 🏗️ Design Patterns (GoF)
+## <span style="color:hsl(260,68%,44%)">3. 🏗️ Design Patterns (GoF)</span>
 
 The gateway is deliberately structured around Gang-of-Four patterns; each is applied where it
 removes real coupling, not for its own sake:
@@ -512,7 +512,7 @@ removes real coupling, not for its own sake:
 ---
 
 <a id="tech-stack"></a>
-## 4. 🧰 Tech Stack
+## <span style="color:hsl(263,68%,44%)">4. 🧰 Tech Stack</span>
 
 | Layer           | Technology                                                           |
 |-----------------|----------------------------------------------------------------------|
@@ -532,7 +532,7 @@ removes real coupling, not for its own sake:
 ---
 
 <a id="features"></a>
-## 5. 🔹 Features
+## <span style="color:hsl(267,68%,44%)">5. 🔹 Features</span>
 
 <ul>
 
@@ -566,7 +566,7 @@ removes real coupling, not for its own sake:
 ---
 
 <a id="prerequisites"></a>
-## 6. 🔹 Prerequisites
+## <span style="color:hsl(270,68%,44%)">6. 🔹 Prerequisites</span>
 
 | Requirement       | Version |
 |-------------------|---------|
@@ -579,9 +579,9 @@ removes real coupling, not for its own sake:
 ---
 
 <a id="quick-start"></a>
-## 7. 🚀 Quick Start
+## <span style="color:hsl(273,68%,44%)">7. 🚀 Quick Start</span>
 
-### 1. Clone and set environment variables
+### <span style="color:hsl(276,68%,44%)">1. Clone and set environment variables</span>
 
 ```bash
 git clone https://github.com/your-org/llm-gateway.git
@@ -591,7 +591,7 @@ export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### 2. Start dependencies with Docker Compose
+### <span style="color:hsl(280,68%,44%)">2. Start dependencies with Docker Compose</span>
 
 ```bash
 docker compose up -d postgres redis guardrails keycloak
@@ -612,7 +612,7 @@ The `guardrails` service is built locally from `guardrails-service/` (base image
 > `spring.flyway.url` / `user` / `password` properties. If you ever see an empty
 > `spring_ai` database with no tables, this configuration is what makes migrations run.
 
-### 3. Build and run
+### <span style="color:hsl(283,68%,44%)">3. Build and run</span>
 
 This is now a multi-module reactor — target a specific module with `-pl`, or `cd` into it:
 
@@ -621,7 +621,7 @@ mvn -pl llm-gateway-core spring-boot:run     # the gateway itself, port 8080
 mvn -pl llm-openrouter spring-boot:run       # OpenRouter-backed chat service, port 8085
 ```
 
-### 4. Smoke test
+### <span style="color:hsl(286,68%,44%)">4. Smoke test</span>
 
 Auth is **enabled by default**, so you need a Keycloak access token first (see
 [Security — Keycloak / OAuth2 Authentication](#security--keycloak--oauth2-authentication)
@@ -647,7 +647,7 @@ curl -X POST http://localhost:8080/llm/v1/query \
 ---
 
 <a id="docker-compose"></a>
-## 8. 🐳 Docker Compose
+## <span style="color:hsl(289,68%,44%)">8. 🐳 Docker Compose</span>
 
 `docker-compose.yml` includes all infrastructure services:
 
@@ -674,18 +674,18 @@ docker compose up -d prometheus grafana tempo
 ---
 
 <a id="configuration-reference"></a>
-## 9. 📚 Configuration Reference
+## <span style="color:hsl(293,68%,44%)">9. 📚 Configuration Reference</span>
 
 All values can be overridden via environment variables.
 
-### Server
+### <span style="color:hsl(296,68%,44%)">Server</span>
 
 | Property                   | Env Var | Default   |
 |----------------------------|---------|-----------|
 | `server.port`              | —       | `8080`    |
 | `spring.webflux.base-path` | —       | `/llm/v1` |
 
-### PostgreSQL
+### <span style="color:hsl(299,68%,44%)">PostgreSQL</span>
 
 | Property | Env Var             | Default     |
 |----------|---------------------|-------------|
@@ -695,7 +695,7 @@ All values can be overridden via environment variables.
 | Username | `POSTGRES_USER`     | `postgres`  |
 | Password | `POSTGRES_PASSWORD` | `postgres`  |
 
-### Redis
+### <span style="color:hsl(303,68%,44%)">Redis</span>
 
 | Property | Env Var          | Default     |
 |----------|------------------|-------------|
@@ -703,7 +703,7 @@ All values can be overridden via environment variables.
 | Port     | `REDIS_PORT`     | `6379`      |
 | Password | `REDIS_PASSWORD` | _(empty)_   |
 
-### LLM Providers
+### <span style="color:hsl(306,68%,44%)">LLM Providers</span>
 
 | Provider        | Env Var               | Default                  |
 |-----------------|-----------------------|--------------------------|
@@ -720,7 +720,7 @@ Disable a provider entirely:
 LLM_PROVIDERS_OPENAI_ENABLED=false
 ```
 
-### Cache & Memory
+### <span style="color:hsl(309,68%,44%)">Cache & Memory</span>
 
 | Env Var                                | Default | Description                                                                           |
 |----------------------------------------|---------|---------------------------------------------------------------------------------------|
@@ -732,13 +732,13 @@ LLM_PROVIDERS_OPENAI_ENABLED=false
 | `LLM_CACHE_SEMANTIC_MAX_ENTRIES`       | `256`   | Per provider:model embedding-index size (LRU-evicted)                                 |
 | `LLM_CACHE_SEMANTIC_INDEX_TTL_MINUTES` | `120`   | Embedding-index lifetime                                                              |
 
-### Request
+### <span style="color:hsl(312,68%,44%)">Request</span>
 
 | Env Var                       | Default | Description                           |
 |-------------------------------|---------|---------------------------------------|
 | `LLM_REQUEST_TIMEOUT_SECONDS` | `30`    | Per-request timeout (→ 504 on breach) |
 
-### Rate Limiting
+### <span style="color:hsl(316,68%,44%)">Rate Limiting</span>
 
 | Env Var                       | Default |
 |-------------------------------|---------|
@@ -746,7 +746,7 @@ LLM_PROVIDERS_OPENAI_ENABLED=false
 | `RATE_LIMITER_MAX_REQUESTS`   | `60`    |
 | `RATE_LIMITER_WINDOW_SECONDS` | `60`    |
 
-### Guardrails
+### <span style="color:hsl(319,68%,44%)">Guardrails</span>
 
 | Env Var                       | Default   |
 |-------------------------------|-----------|
@@ -758,7 +758,7 @@ LLM_PROVIDERS_OPENAI_ENABLED=false
 | `LLM_RESPONSE_MIN_LENGTH`     | `10`      |
 | `LLM_RESPONSE_MAX_LENGTH`     | `50000`   |
 
-### External Guardrails Service (LangChain sidecar)
+### <span style="color:hsl(322,68%,44%)">External Guardrails Service (LangChain sidecar)</span>
 
 | Env Var                                   | Default                 | Description                                        |
 |-------------------------------------------|-------------------------|----------------------------------------------------|
@@ -776,7 +776,7 @@ Sidecar-side knobs (set on the `guardrails` container in `docker-compose.yml`):
 | `GUARDRAILS_MAX_LENGTH`     | `10000`   | Max accepted text length                               |
 | `GUARDRAILS_LLM_CHECK`      | `false`   | Enable LangChain LLM-as-judge (needs `OPENAI_API_KEY`) |
 
-### Security
+### <span style="color:hsl(325,68%,44%)">Security</span>
 
 | Env Var                              | Default                                       | Description                                   |
 |--------------------------------------|-----------------------------------------------|-----------------------------------------------|
@@ -789,7 +789,7 @@ Sidecar-side knobs (set on the `guardrails` container in `docker-compose.yml`):
 | `LLM_SENSITIVE_DATA_REDACT_RESPONSE` | `true`                                        | Redact before returning to caller             |
 
 <a id="observability"></a>
-## 10. 📈 Observability
+## <span style="color:hsl(329,68%,44%)">10. 📈 Observability</span>
 
 | Env Var                       | Default                 |
 |-------------------------------|-------------------------|
@@ -800,7 +800,7 @@ Sidecar-side knobs (set on the `guardrails` container in `docker-compose.yml`):
 > **Full setup guide:** see **[PROMETHEUS_GRAFANA_SETUP.md](PROMETHEUS_GRAFANA_SETUP.md)**
 > for the end-to-end Prometheus + Grafana walkthrough, PromQL examples, and troubleshooting.
 
-### Prometheus metrics
+### <span style="color:hsl(332,68%,44%)">Prometheus metrics</span>
 
 Exposed at `GET /llm/v1/actuator/prometheus`.
 
@@ -825,7 +825,7 @@ Custom application metrics (emitted by `LlmMetricsService` + the `@Timed` facade
 Histogram buckets are enabled for latency metrics (`management.metrics.distribution.percentiles-histogram`)
 so Grafana can compute percentiles.
 
-### Grafana dashboard
+### <span style="color:hsl(335,68%,44%)">Grafana dashboard</span>
 
 An importable dashboard lives at
 `observability/grafana/dashboards/grafana-dashboard-llm-gateway.json`. With Docker Compose
@@ -833,11 +833,11 @@ it is **auto-provisioned** (appears under *Dashboards → LLM Gateway* at <http:
 `admin`/`admin`). It visualises calls per provider, REST API turnaround time, latency
 percentiles, token usage, errors, circuit-breaker state, and JVM/system health.
 
-### Distributed Tracing
+### <span style="color:hsl(339,68%,44%)">Distributed Tracing</span>
 
 Every request creates an OTEL span `llm.request`. Trace and span IDs appear in every log line via MDC. Structured extraction creates a separate `llm.structured` span.
 
-### HallucinationMonitorAdvisor
+### <span style="color:hsl(342,68%,44%)">HallucinationMonitorAdvisor</span>
 
 `HallucinationMonitorAdvisor` is advisor step ⑧ in the Spring AI chain. It scores the model's response for uncertainty signals (hedging phrases, contradictions, vague references) and records the score as a Micrometer gauge. Behavior is controlled by two properties:
 
@@ -849,7 +849,7 @@ Every request creates an OTEL span `llm.request`. Trace and span IDs appear in e
 
 When `block-on-suspicion=false` (default), the advisor logs a `WARN` and increments `llm_hallucination_suspects_total` but still returns the response to the caller — useful for monitoring before enforcement. Set `block-on-suspicion=true` in production environments where factual accuracy is critical.
 
-### Cost Tracking (`TokenCostService`)
+### <span style="color:hsl(345,68%,44%)">Cost Tracking (`TokenCostService`)</span>
 
 `TokenCostService` estimates the USD cost of every LLM call from the prompt and completion token counts in the model's usage metadata, using a per-model rate table configured under `llm.cost.rates.*`. The estimated cost is:
 
@@ -871,7 +871,7 @@ llm:
       claude-3-5-sonnet: 0.000003
 ```
 
-### Actuator endpoints
+### <span style="color:hsl(348,68%,44%)">Actuator endpoints</span>
 
 | Endpoint                            | Description                                        |
 |-------------------------------------|----------------------------------------------------|
@@ -899,9 +899,9 @@ livenessProbe:
 ---
 
 <a id="security--keycloak--oauth2-authentication"></a>
-## 11. 🔐 Security — Keycloak / OAuth2 Authentication
+## <span style="color:hsl(352,68%,44%)">11. 🔐 Security — Keycloak / OAuth2 Authentication</span>
 
-### How it works
+### <span style="color:hsl(355,68%,44%)">How it works</span>
 
 1. Client obtains a JWT access token from Keycloak (client-credentials grant for
    service/script callers, or password/authorization-code grant for human users)
@@ -918,7 +918,7 @@ livenessProbe:
 There is no local user/key registry anymore — Keycloak is the single source of identity.
 Disable auth entirely for local dev with `GATEWAY_AUTH_ENABLED=false`.
 
-### Local Keycloak setup
+### <span style="color:hsl(358,68%,44%)">Local Keycloak setup</span>
 
 `docker compose up -d keycloak` starts Keycloak in dev mode and auto-imports the
 `llm-gateway` realm from `docker/keycloak/llm-gateway-realm.json`:
@@ -949,7 +949,7 @@ One confidential client per service (all service-account + direct-access-grants 
 > **local development only**. Rotate them (or re-import a different realm) before any
 > real deployment, and never reuse `llm-gateway-dev-secret` outside your laptop.
 
-### Getting a token
+### <span style="color:hsl(1,68%,44%)">Getting a token</span>
 
 **Service-to-service (client-credentials grant)** — what curl/scripts/CI should use:
 
@@ -977,7 +977,7 @@ Use the returned `access_token` as `Authorization: Bearer <token>` on every gate
 Tokens expire after 15 minutes (`accessTokenLifespan` in the realm export) — re-request
 when you get a 401.
 
-### Adding roles or callers
+### <span style="color:hsl(5,68%,44%)">Adding roles or callers</span>
 
 Everything is managed in Keycloak, not in this codebase:
 
@@ -993,7 +993,7 @@ Everything is managed in Keycloak, not in this codebase:
 
 </ul>
 
-### Authorizing by role (extension point)
+### <span style="color:hsl(8,68%,44%)">Authorizing by role (extension point)</span>
 
 The gateway currently treats "has a valid token" as sufficient for every protected
 route — it doesn't yet gate specific endpoints by role (mirroring the old API-key
@@ -1007,7 +1007,7 @@ model, where any valid key could call anything). To restrict an endpoint to
 ---
 
 <a id="api-documentation"></a>
-## 12. 📚 API Documentation
+## <span style="color:hsl(11,68%,44%)">12. 📚 API Documentation</span>
 
 Base URL: `http://localhost:8080/llm/v1`
 
@@ -1023,7 +1023,7 @@ All request bodies are JSON. All responses are JSON.
 
 ---
 
-### Request Body — `LlmRequest`
+### <span style="color:hsl(15,68%,44%)">Request Body — `LlmRequest`</span>
 
 ```jsonc
 {
@@ -1045,7 +1045,7 @@ All request bodies are JSON. All responses are JSON.
 
 ---
 
-### GET `/health`
+### <span style="color:hsl(18,68%,44%)">GET `/health`</span>
 
 Checks gateway liveness and Redis connectivity.
 
@@ -1061,7 +1061,7 @@ Status is `DEGRADED` when Redis is unreachable.
 
 ---
 
-### GET `/providers`
+### <span style="color:hsl(21,68%,44%)">GET `/providers`</span>
 
 ```bash
 curl http://localhost:8080/llm/v1/providers
@@ -1072,13 +1072,13 @@ curl http://localhost:8080/llm/v1/providers
 
 ---
 
-### GET `/models`
+### <span style="color:hsl(24,68%,44%)">GET `/models`</span>
 
 Returns available models per provider.
 
 ---
 
-### POST `/query`
+### <span style="color:hsl(28,68%,44%)">POST `/query`</span>
 
 Single-turn query.
 
@@ -1102,7 +1102,7 @@ curl -X POST http://localhost:8080/llm/v1/query \
 
 ---
 
-### POST `/failover`
+### <span style="color:hsl(31,68%,44%)">POST `/failover`</span>
 
 Tries providers sequentially until one succeeds.
 
@@ -1116,7 +1116,7 @@ Default chain when `providers` is omitted: `openai → anthropic → ollama`.
 
 ---
 
-### POST `/chat`
+### <span style="color:hsl(34,68%,44%)">POST `/chat`</span>
 
 Multi-turn conversation. `session_id` is mandatory.
 
@@ -1134,7 +1134,7 @@ curl -X POST http://localhost:8080/llm/v1/chat \
 
 ---
 
-### DELETE `/sessions/{sessionId}`
+### <span style="color:hsl(37,68%,44%)">DELETE `/sessions/{sessionId}`</span>
 
 Clears all conversation history for a session from Redis.
 
@@ -1145,7 +1145,7 @@ curl -X DELETE http://localhost:8080/llm/v1/sessions/alice-001
 
 ---
 
-### POST `/{provider}/chat`
+### <span style="color:hsl(41,68%,32%)">POST `/{provider}/chat`</span>
 
 Per-provider chat via path variable.
 
@@ -1157,7 +1157,7 @@ curl -X POST http://localhost:8080/llm/v1/anthropic/chat \
 
 ---
 
-### POST `/{provider}/stream`
+### <span style="color:hsl(44,68%,32%)">POST `/{provider}/stream`</span>
 
 Server-Sent Events streaming (`text/event-stream`).
 
@@ -1170,7 +1170,7 @@ curl -X POST http://localhost:8080/llm/v1/openai/stream \
 
 ---
 
-### POST `/openai/extract`
+### <span style="color:hsl(47,68%,32%)">POST `/openai/extract`</span>
 
 Structured output extraction — response is deserialised into a typed Java record. Runs through the facade for full tracing and circuit-breaker coverage.
 
@@ -1182,7 +1182,7 @@ curl -X POST http://localhost:8080/llm/v1/openai/extract \
 
 ---
 
-### POST `/embed`
+### <span style="color:hsl(51,68%,32%)">POST `/embed`</span>
 
 Generate a vector embedding for the given text (OpenAI by default).
 
@@ -1198,7 +1198,7 @@ Response includes `embedding` (float array), `dimensions`, `model`, and `provide
 ---
 
 <a id="prompt-template-system"></a>
-## 13. 🤖 Prompt Template System
+## <span style="color:hsl(54,68%,32%)">13. 🤖 Prompt Template System</span>
 
 System prompts live in `.st` files under `llm-gateway-core/src/main/resources/prompts/`. Each provider has its own template.
 
@@ -1210,7 +1210,7 @@ System prompts live in `.st` files under `llm-gateway-core/src/main/resources/pr
 | `system-default.st`    | Fallback                   |
 | `assistant-starter.st` | Assistant prefill template |
 
-### Template variables
+### <span style="color:hsl(57,68%,32%)">Template variables</span>
 
 | Variable     | Default                  | Description          |
 |--------------|--------------------------|----------------------|
@@ -1220,7 +1220,7 @@ System prompts live in `.st` files under `llm-gateway-core/src/main/resources/pr
 | `{language}` | `English`                | Response language    |
 | `{starter}`  | `I understand...`        | Prefill opening text |
 
-### Resolution priority
+### <span style="color:hsl(60,68%,32%)">Resolution priority</span>
 
 1. `template_vars` present → render per-provider `.st` with merged vars
 2. `system_prompt` set (no `template_vars`) → use verbatim (backward compatible)
@@ -1229,11 +1229,11 @@ System prompts live in `.st` files under `llm-gateway-core/src/main/resources/pr
 ---
 
 <a id="guardrail-chain"></a>
-## 14. 🔹 Guardrail Chain
+## <span style="color:hsl(64,68%,32%)">14. 🔹 Guardrail Chain</span>
 
 Guardrails run at **two levels**:
 
-### Level 1 — Gateway guardrail chain (every provider)
+### <span style="color:hsl(67,68%,32%)">Level 1 — Gateway guardrail chain (every provider)</span>
 
 A GoF *Chain of Responsibility* (`guardrail/chain/GuardrailChain`) executed by the facade
 **before any provider is called** — including the REST providers that bypass the Spring AI
@@ -1248,7 +1248,7 @@ request with HTTP 400 (which also publishes a `GuardrailViolationEvent` for the 
 
 Adding a step = one `@Component` implementing `GuardrailStep` — no facade changes.
 
-### Level 2 — Spring AI advisor chain (ChatClient providers)
+### <span style="color:hsl(70,68%,32%)">Level 2 — Spring AI advisor chain (ChatClient providers)</span>
 
 ```
 INPUT  ──► ① ToxicityFilterAdvisor     Blocks harmful content → HTTP 400
@@ -1269,7 +1269,7 @@ OUTPUT ◄──
 
 > **Production note:** PII and toxicity detection use regex/keyword lists. For higher accuracy, integrate a dedicated service such as AWS Comprehend, Azure AI Content Safety, or Microsoft Presidio. The hallucination monitor is a heuristic signal — consider RAG for factual grounding.
 
-### Sensitive-data guard (all providers)
+### <span style="color:hsl(73,68%,32%)">Sensitive-data guard (all providers)</span>
 
 The guardrail advisor chain above only runs for the Spring AI **ChatClient** providers
 (OpenAI, Anthropic, Ollama). To guarantee that **no PII or secret is ever sent to an
@@ -1300,7 +1300,7 @@ secrets — API keys (`sk-…`), AWS access keys (`AKIA…`), bearer tokens and 
 | `LLM_SENSITIVE_DATA_REDACT_PROMPT`   | `true`  | Redact before sending to the provider      |
 | `LLM_SENSITIVE_DATA_REDACT_RESPONSE` | `true`  | Redact before returning to the caller      |
 
-### Tuning guardrail patterns without code changes
+### <span style="color:hsl(77,68%,32%)">Tuning guardrail patterns without code changes</span>
 
 All guardrail pattern lists are externalised in `GuardrailPatternProperties`
 (`llm.guardrails.patterns.*`) so they can be added/removed/edited purely in
@@ -1342,7 +1342,7 @@ llm:
 ---
 
 <a id="guardrails-service-langserve-sidecar"></a>
-## 15. 🔹 Guardrails Service (LangServe sidecar)
+## <span style="color:hsl(80,68%,32%)">15. 🔹 Guardrails Service (LangServe sidecar)</span>
 
 A FastAPI + **LangServe** service in `guardrails-service/`, built on the official
 **`langchain/langchain`** Docker image, that the gateway consults over REST **before
@@ -1367,7 +1367,7 @@ LlmGatewayFacade ──► GuardrailChain ──► RemoteGuardrailStep
                                      └─ optional LangChain LLM-as-judge
 ```
 
-### API
+### <span style="color:hsl(83,68%,32%)">API</span>
 
 | Endpoint                      | Description                                       |
 |-------------------------------|---------------------------------------------------|
@@ -1408,7 +1408,7 @@ curl http://localhost:8000/v1/checks   # active checks + current policy
 
 </ul>
 
-### Availability policy
+### <span style="color:hsl(87,68%,32%)">Availability policy</span>
 
 The call is wrapped in its own Resilience4j circuit breaker (`guardrails-service`). If the
 sidecar is down, times out, or the circuit is open:
@@ -1428,7 +1428,7 @@ depends on the sidecar.
 ---
 
 <a id="feature-flags"></a>
-## 16. 🚩 Feature Flags
+## <span style="color:hsl(90,68%,32%)">16. 🚩 Feature Flags</span>
 
 Runtime feature flags under `app.features.*` allow individual gateway capabilities to be toggled without a code change or redeployment. Each flag has a matching environment variable.
 
@@ -1444,7 +1444,7 @@ Runtime feature flags under `app.features.*` allow individual gateway capabiliti
 ---
 
 <a id="project-structure"></a>
-## 17. 🏗️ Project Structure
+## <span style="color:hsl(93,68%,32%)">17. 🏗️ Project Structure</span>
 
 A multi-module Maven reactor — the root `pom.xml` is a thin aggregator (`packaging=pom`); all
 code lives in the child modules below.
@@ -1531,7 +1531,7 @@ PROMETHEUS_GRAFANA_SETUP.md               Prometheus + Grafana setup guide
 ---
 
 <a id="insomnia-collection"></a>
-## 18. 🤝 Insomnia Collection
+## <span style="color:hsl(96,68%,32%)">18. 🤝 Insomnia Collection</span>
 
 Import `insomnia-collection.json` into Insomnia to get all endpoints pre-configured.
 
@@ -1566,22 +1566,22 @@ Import `insomnia-collection.json` into Insomnia to get all endpoints pre-configu
 ---
 
 <a id="provider-api-details"></a>
-## 19. 🤖 Provider API Details
+## <span style="color:hsl(100,68%,32%)">19. 🤖 Provider API Details</span>
 
-### OpenAI / Anthropic / Ollama
+### <span style="color:hsl(103,68%,32%)">OpenAI / Anthropic / Ollama</span>
 Implemented via Spring AI `ChatClient` — full guardrail chain, chat memory, streaming, structured output, tool calling.
 
-### Google Gemini
+### <span style="color:hsl(106,68%,32%)">Google Gemini</span>
 Uses the Google Generative Language REST API (`v1beta`). System prompts are passed via `systemInstruction` (Gemini's native field). Supports `gemini-1.5-pro-latest`, `gemini-1.5-flash-latest`, `gemini-2.0-flash`, and other Gemini models.
 
 **Required env var:** `GOOGLE_API_KEY`
 
-### Cohere
+### <span style="color:hsl(109,68%,32%)">Cohere</span>
 Uses the Cohere v2 chat API (`https://api.cohere.com/v2/chat`) with the messages format (system + user turns). Supports `command-r-plus`, `command-r`, `command-light`.
 
 **Required env var:** `COHERE_API_KEY`
 
-### HuggingFace
+### <span style="color:hsl(113,68%,32%)">HuggingFace</span>
 Uses the HuggingFace Serverless Inference API with its OpenAI-compatible endpoint (`https://api-inference.huggingface.co/v1/chat/completions`). Works with any model on the HuggingFace Hub that supports the chat completion task (e.g. Mistral, Llama, Qwen, Phi).
 
 **Required env var:** `HUGGINGFACE_API_KEY`
@@ -1589,7 +1589,7 @@ Uses the HuggingFace Serverless Inference API with its OpenAI-compatible endpoin
 ---
 
 <a id="llm-openrouter-module"></a>
-## 20. 🤖 llm-openrouter Module
+## <span style="color:hsl(116,68%,32%)">20. 🤖 llm-openrouter Module</span>
 
 A separate, independently runnable module (port `8085`) that talks to
 [OpenRouter](https://openrouter.ai) — a single API that routes to many vendors' models, addressed
@@ -1598,7 +1598,7 @@ with vendor-prefixed ids (`openai/gpt-4o`, `anthropic/claude-3.5-sonnet`, `googl
 (separate `ChatModel` per vendor SDK), this module talks to exactly one endpoint — OpenRouter
 itself — by pointing Spring AI's OpenAI client at OpenRouter's OpenAI-SDK-compatible base URL.
 
-### Configuration
+### <span style="color:hsl(119,68%,32%)">Configuration</span>
 
 | Env Var                  | Default                                    | Description                                                              |
 |--------------------------|--------------------------------------------|--------------------------------------------------------------------------|
@@ -1612,7 +1612,7 @@ itself — by pointing Spring AI's OpenAI client at OpenRouter's OpenAI-SDK-comp
 | `GATEWAY_AUTH_ENABLED`   | `true`                                     | Same Keycloak JWT auth as the rest of the platform                       |
 | `KEYCLOAK_ISSUER_URI`    | `http://localhost:8081/realms/llm-gateway` | Shared Keycloak realm (started from `llm-gateway-core`'s docker-compose) |
 
-### API
+### <span style="color:hsl(123,68%,32%)">API</span>
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8081/realms/llm-gateway/protocol/openid-connect/token \
@@ -1636,7 +1636,7 @@ curl -X POST http://localhost:8085/openrouter/v1/chat \
 Response shape matches the rest of the platform — `content`, `model`, `provider`, token usage,
 `latency_ms`, `correlation_id` (echoed from `X-Request-ID` if supplied), `error` on failure.
 
-### Resilience
+### <span style="color:hsl(126,68%,32%)">Resilience</span>
 
 Wrapped in Resilience4j `@Retry`/`@CircuitBreaker` (instance name `openrouter`, configured in
 `llm-openrouter/src/main/resources/application.yaml`) — OpenRouter is a third-party dependency that
@@ -1645,7 +1645,7 @@ can rate-limit or time out, same reasoning as `llm-gateway-core`'s per-provider 
 ---
 
 <a id="building"></a>
-## 21. 🔨 Building
+## <span style="color:hsl(129,68%,32%)">21. 🔨 Building</span>
 
 `mvn` at the repo root builds the whole reactor (both modules). Target one module with `-pl`:
 
@@ -1662,7 +1662,7 @@ java -jar llm-gateway-core/target/llm-gateway-core-*.jar
 java -jar llm-openrouter/target/llm-openrouter-*.jar
 ```
 
-### Code formatting (Spotless)
+### <span style="color:hsl(132,68%,32%)">Code formatting (Spotless)</span>
 
 Java sources are auto-formatted with [Spotless](https://github.com/diffplug/spotless) +
 Google Java Format, checked on every `mvn verify`:
@@ -1678,7 +1678,7 @@ mvn spotless:apply   # reformats in place
 > plain Java source with no JDK-version coupling, so this only affects which JDK runs the
 > formatter, not which JDK compiles/runs the app.
 
-### Dependency vulnerability scanning (OWASP)
+### <span style="color:hsl(136,68%,32%)">Dependency vulnerability scanning (OWASP)</span>
 
 Not part of the default build (needs network access to the NVD feed, ideally with an
 `NVD_API_KEY`):
@@ -1688,7 +1688,7 @@ mvn -P security-scan verify
 # report: target/dependency-check-report.html
 ```
 
-### Docker image
+### <span style="color:hsl(139,68%,32%)">Docker image</span>
 
 The root `Dockerfile` builds one module at a time, selected via the `MODULE` build-arg
 (defaults to `llm-gateway-core`):
@@ -1714,13 +1714,13 @@ Maven repository — pass it in via the `maven_settings` BuildKit secret, not ba
 ---
 
 <a id="technology-deep-dive"></a>
-## 22. 🧰 Technology Deep Dive
+## <span style="color:hsl(142,68%,32%)">22. 🧰 Technology Deep Dive</span>
 
 A plain-English explanation of every technology in this repo — what it is and exactly how this project uses it.
 
 ---
 
-### Spring Boot 4 + Spring WebFlux
+### <span style="color:hsl(145,68%,32%)">Spring Boot 4 + Spring WebFlux</span>
 
 **What it is:** Spring Boot is an opinionated Java framework for building production-ready applications with minimal configuration. Spring WebFlux is its reactive, non-blocking web layer built on Project Reactor.
 
@@ -1736,7 +1736,7 @@ HTTP request → WebFlux router → LlmHandler → boundedElastic scheduler
 
 ---
 
-### Spring AI
+### <span style="color:hsl(149,68%,32%)">Spring AI</span>
 
 **What it is:** Spring AI is the official Spring abstraction over LLM providers — it gives a single `ChatClient` interface regardless of which model you're calling.
 
@@ -1744,7 +1744,7 @@ HTTP request → WebFlux router → LlmHandler → boundedElastic scheduler
 
 ---
 
-### Keycloak
+### <span style="color:hsl(152,68%,36%)">Keycloak</span>
 
 **What it is:** An open-source identity and access management server (originally a JBoss/Red Hat project) implementing OAuth2/OIDC — issues, signs, and validates JWT access tokens against realms, clients, users, and roles.
 
@@ -1752,7 +1752,7 @@ HTTP request → WebFlux router → LlmHandler → boundedElastic scheduler
 
 ---
 
-### PostgreSQL 18
+### <span style="color:hsl(155,68%,36%)">PostgreSQL 18</span>
 
 **What it is:** A relational database.
 
@@ -1760,7 +1760,7 @@ HTTP request → WebFlux router → LlmHandler → boundedElastic scheduler
 
 ---
 
-### pgAdmin 4
+### <span style="color:hsl(159,68%,36%)">pgAdmin 4</span>
 
 **What it is:** A web-based GUI for PostgreSQL.
 
@@ -1774,7 +1774,7 @@ To connect: Register Server → Host: `postgres`, Port: `5432`, DB: `spring_ai`,
 
 ---
 
-### Redis
+### <span style="color:hsl(162,68%,36%)">Redis</span>
 
 **What it is:** An in-memory key-value store used as a cache and message broker.
 
@@ -1792,7 +1792,7 @@ POST /chat  →  Redis GET session:{id}   (load history)
 
 ---
 
-### RedisInsight
+### <span style="color:hsl(165,68%,36%)">RedisInsight</span>
 
 **What it is:** A web-based GUI for Redis, built by Redis Ltd.
 
@@ -1800,7 +1800,7 @@ POST /chat  →  Redis GET session:{id}   (load history)
 
 ---
 
-### Flyway
+### <span style="color:hsl(168,68%,36%)">Flyway</span>
 
 **What it is:** A database migration tool — it tracks and applies versioned SQL scripts to keep your schema in sync with the application.
 
@@ -1808,7 +1808,7 @@ POST /chat  →  Redis GET session:{id}   (load history)
 
 ---
 
-### R2DBC
+### <span style="color:hsl(172,68%,36%)">R2DBC</span>
 
 **What it is:** Reactive Relational Database Connectivity — a non-blocking alternative to JDBC for relational databases.
 
@@ -1816,7 +1816,7 @@ POST /chat  →  Redis GET session:{id}   (load history)
 
 ---
 
-### Resilience4j
+### <span style="color:hsl(175,68%,36%)">Resilience4j</span>
 
 **What it is:** A lightweight fault-tolerance library for Java — provides circuit breaker, retry, rate limiter, and bulkhead patterns.
 
@@ -1833,7 +1833,7 @@ When the guardrails circuit is open the gateway either fails-open (continues wit
 
 ---
 
-### Micrometer + OpenTelemetry (OTEL)
+### <span style="color:hsl(178,68%,36%)">Micrometer + OpenTelemetry (OTEL)</span>
 
 **What it is:** Micrometer is a metrics facade for JVM apps (like SLF4J but for metrics). OpenTelemetry is the industry standard for distributed tracing and telemetry.
 
@@ -1848,7 +1848,7 @@ When the guardrails circuit is open the gateway either fails-open (continues wit
 
 ---
 
-### Prometheus
+### <span style="color:hsl(181,68%,36%)">Prometheus</span>
 
 **What it is:** An open-source metrics collection and alerting system. It scrapes HTTP endpoints for metrics data.
 
@@ -1864,7 +1864,7 @@ Spring Boot app :8080/llm/v1/actuator/prometheus
 
 ---
 
-### Grafana Tempo
+### <span style="color:hsl(185,68%,36%)">Grafana Tempo</span>
 
 **What it is:** A distributed tracing backend — stores and queries traces from instrumented applications.
 
@@ -1876,7 +1876,7 @@ LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph /
 
 ---
 
-### Grafana Loki
+### <span style="color:hsl(188,68%,36%)">Grafana Loki</span>
 
 **What it is:** A log aggregation system designed to work alongside Prometheus and Tempo. Unlike Elasticsearch, Loki indexes only log labels (not the full text), making it very storage-efficient.
 
@@ -1884,7 +1884,7 @@ LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph /
 
 ---
 
-### Grafana
+### <span style="color:hsl(191,68%,36%)">Grafana</span>
 
 **What it is:** An open-source observability platform for visualising metrics, logs, and traces.
 
@@ -1903,7 +1903,7 @@ LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph /
 
 ---
 
-### LangChain + LangServe
+### <span style="color:hsl(195,68%,36%)">LangChain + LangServe</span>
 
 **What it is:** LangChain is a Python framework for building LLM pipelines. LangServe is its REST deployment layer — it wraps any LangChain `Runnable` as a FastAPI service with standard `invoke`, `batch`, `stream`, and `playground` endpoints.
 
@@ -1911,7 +1911,7 @@ LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph /
 
 ---
 
-### FastAPI + Uvicorn
+### <span style="color:hsl(198,68%,36%)">FastAPI + Uvicorn</span>
 
 **What it is:** FastAPI is a modern Python web framework with automatic OpenAPI docs and Pydantic validation. Uvicorn is its ASGI server.
 
@@ -1919,7 +1919,7 @@ LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph /
 
 ---
 
-### Docker Compose
+### <span style="color:hsl(201,68%,44%)">Docker Compose</span>
 
 **What it is:** A tool for defining and running multi-container Docker applications from a single YAML file.
 
@@ -1927,9 +1927,9 @@ LLM Gateway  →  OTLP/HTTP :4318  →  Tempo :3200  →  Grafana (flame graph /
 
 
 <a id="changelog--runtime-migration-notes"></a>
-## 23. 📋 Changelog & Runtime Migration Notes
+## <span style="color:hsl(204,68%,44%)">23. 📋 Changelog & Runtime Migration Notes</span>
 
-### What's New (v2.4)
+### <span style="color:hsl(208,68%,44%)">What's New (v2.4)</span>
 
 Split into a multi-module Maven reactor and added an OpenRouter-backed module:
 
@@ -1943,7 +1943,7 @@ Split into a multi-module Maven reactor and added an OpenRouter-backed module:
 
 ---
 
-### What's New (v2.3)
+### <span style="color:hsl(211,68%,44%)">What's New (v2.3)</span>
 
 Authentication moved from a custom X-API-Key/Postgres mechanism to Keycloak-issued OAuth2 JWTs:
 
@@ -1959,7 +1959,7 @@ Authentication moved from a custom X-API-Key/Postgres mechanism to Keycloak-issu
 
 ---
 
-### What's New (v2.2)
+### <span style="color:hsl(214,68%,44%)">What's New (v2.2)</span>
 
 A Spring AI 2.0 alignment review plus a best-practices pass:
 
@@ -1978,7 +1978,7 @@ A Spring AI 2.0 alignment review plus a best-practices pass:
 
 ---
 
-### What's New (v2.1)
+### <span style="color:hsl(217,68%,44%)">What's New (v2.1)</span>
 
 Security, correctness, and feature improvements:
 
@@ -2004,7 +2004,7 @@ Security, correctness, and feature improvements:
 
 ---
 
-### Runtime Migration: Java 21 → 25, Spring AI → 2.0.0
+### <span style="color:hsl(221,68%,44%)">Runtime Migration: Java 21 → 25, Spring AI → 2.0.0</span>
 
 This service now targets **Java 25** and **Spring AI 2.0.0** (up from Java 21 and Spring AI 2.0.0-M8), inherited from the shared `super-pom` / `llm-bom` chain — no module-level `java.version`, `maven.compiler.release`, or `spring-ai.version` override exists in this repo's `pom.xml`, so the bump required no POM edits here. The CI workflow (`.github/workflows/ci.yml`) was updated to provision JDK 25 via `actions/setup-java@v4` (it previously pinned JDK 21).
 
