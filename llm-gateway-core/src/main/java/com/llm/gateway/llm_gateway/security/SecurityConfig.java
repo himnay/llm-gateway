@@ -65,15 +65,23 @@ public class SecurityConfig {
         .authorizeExchange(
             a ->
                 a
-                    // Infrastructure — always public
-                    .pathMatchers("/actuator/**")
+                    // Matchers see the path inside spring.webflux.base-path (/llm/v1), so
+                    // "/providers" matches /llm/v1/providers.
+                    // Read-only infrastructure is public (probes, Prometheus scraping); loggers,
+                    // env and circuitbreakers need a token — loggers accepts POSTs that change
+                    // log levels.
+                    .pathMatchers(
+                        "/actuator/health/**",
+                        "/actuator/info",
+                        "/actuator/metrics/**",
+                        "/actuator/prometheus")
                     .permitAll()
-                    // Public gateway info endpoints (base-path /llm/v1 is prepended by webflux)
-                    .pathMatchers("/llm/v1/health", "/llm/v1/providers", "/llm/v1/models")
+                    // Public gateway info endpoints
+                    .pathMatchers("/health", "/providers", "/models")
                     .permitAll()
                     // Swagger UI / OpenAPI docs are public
                     .pathMatchers(
-                        "/llm/v1/swagger-ui.html", "/llm/v1/swagger-ui/**", "/llm/v1/api-docs/**")
+                        "/swagger-ui.html", "/swagger-ui/**", "/webjars/**", "/api-docs/**")
                     .permitAll()
                     // Everything else requires a valid Keycloak-issued Bearer token
                     .anyExchange()
