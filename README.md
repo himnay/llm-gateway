@@ -572,6 +572,7 @@ removes real coupling, not for its own sake:
 |-------------------|---------|
 | Java              | 25      |
 | Maven             | 3.9+    |
+| `com.org.llm:super-pom` + `learning-bom` | installed locally (not on Maven Central): `(cd ~/projects/learning-bom && mvn -N install)`, then `(cd ~/projects/super-pom && mvn -N install)` |
 | PostgreSQL        | 16+     |
 | Redis             | 7+      |
 | Ollama (optional) | latest  |
@@ -912,8 +913,12 @@ livenessProbe:
    claim and maps each role to a `ROLE_<NAME>` Spring authority
 5. If the token is missing, expired, or fails signature validation → **HTTP 401**
    (returned automatically by `BearerTokenAuthenticationEntryPoint`)
-6. Actuator endpoints (`/actuator/**`) and the public info/docs routes are always
-   permitted without a token
+6. The public routes need no token: the read-only actuator endpoints (`health`, `info`,
+   `metrics`, `prometheus`), `/llm/v1/health`, `/providers`, `/models`, and Swagger UI. The other
+   actuator endpoints exposed in the default profile (`loggers`, `env`, `circuitbreakers`) need a
+   token, because `loggers` accepts POSTs that change log levels. `SecurityConfig` matches paths
+   inside the `/llm/v1` base path (`/providers`, not `/llm/v1/providers`);
+   `ActuatorSecurityIntegrationTest` pins this down
 
 There is no local user/key registry anymore — Keycloak is the single source of identity.
 Disable auth entirely for local dev with `GATEWAY_AUTH_ENABLED=false`.
@@ -1661,6 +1666,13 @@ mvn clean package -DskipTests
 java -jar llm-gateway-core/target/llm-gateway-core-*.jar
 java -jar llm-openrouter/target/llm-openrouter-*.jar
 ```
+
+CI (`.github/workflows/ci.yml`) installs the parent POM chain, runs `mvn spotless:check`, then
+`mvn clean verify -DskipITs` on every push.
+
+**Known issue:** Swagger UI loads at `/llm/v1/swagger-ui.html`, but generating the OpenAPI document
+(`/llm/v1/api-docs`) never completes with the current springdoc and WebFlux functional routes. It
+predates the Spring Boot 4.1.1 upgrade; the API tables in section 12 are the reference meanwhile.
 
 ### <span style="color:hsl(340,80%,58%)">Code formatting (Spotless)</span>
 
