@@ -33,8 +33,8 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 @Configuration
 public class LlmRouterConfig {
 
-    @RouterOperations({
-        @RouterOperation(
+  @RouterOperations({
+    @RouterOperation(
         path = "/health",
         method = RequestMethod.GET,
         beanClass = LlmHandler.class,
@@ -243,7 +243,7 @@ public class LlmRouterConfig {
                 description =
                     "Clears all Redis-stored conversation history for the given session id.",
                 parameters = {
-  /** Defines the llm routes bean. */
+                  /** Defines the llm routes bean. */
                   @Parameter(
                       name = "sessionId",
                       in = ParameterIn.PATH,

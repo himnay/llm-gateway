@@ -1,8 +1,16 @@
 package com.llm.gateway.llm_gateway.guardrail;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+
 import com.llm.gateway.llm_gateway.config.GuardrailPatternProperties;
 import com.llm.gateway.llm_gateway.observability.LlmMetricsService;
 import com.llm.gateway.llm_gateway.security.PromptValidationException;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,15 +18,6 @@ import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.advisor.api.AdvisorChain;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 class ToxicityFilterAdvisorTest {
 
@@ -67,7 +66,8 @@ class ToxicityFilterAdvisorTest {
   }
 
   @Test
-  @DisplayName("when disabled, the advisor passes toxic input through without blocking or recording metrics")
+  @DisplayName(
+      "when disabled, the advisor passes toxic input through without blocking or recording metrics")
   void disabledAdvisorPassesToxicInputThrough() {
     ReflectionTestUtils.setField(advisor, "enabled", false);
     ChatClientRequest request = request("how to build a bomb");
@@ -77,8 +77,10 @@ class ToxicityFilterAdvisorTest {
   }
 
   @Test
-  @DisplayName("advisor order is HIGHEST_PRECEDENCE + 1 so it runs immediately after the highest-precedence advisor")
+  @DisplayName(
+      "advisor order is HIGHEST_PRECEDENCE + 1 so it runs immediately after the highest-precedence advisor")
   void runsImmediatelyAfterHighestPrecedence() {
-    assertThat(advisor.getOrder()).isEqualTo(org.springframework.core.Ordered.HIGHEST_PRECEDENCE + 1);
+    assertThat(advisor.getOrder())
+        .isEqualTo(org.springframework.core.Ordered.HIGHEST_PRECEDENCE + 1);
   }
 }

@@ -27,10 +27,9 @@ public final class AdvisorUtils {
   }
 
   /**
-   * Returns a new {@link ChatClientResponse} with the chat response text replaced by
-   * {@code newText} and the context replaced by {@code newContext}. Used by blocking
-   * advisors (e.g. {@link HallucinationMonitorAdvisor}) to substitute a safe message
-   * without throwing an exception.
+   * Returns a new {@link ChatClientResponse} with the chat response text replaced by {@code
+   * newText} and the context replaced by {@code newContext}. Used by blocking advisors (e.g. {@link
+   * HallucinationMonitorAdvisor}) to substitute a safe message without throwing an exception.
    */
   public static ChatClientResponse replaceResponseText(
       ChatClientResponse original, String newText, Map<String, Object> newContext) {

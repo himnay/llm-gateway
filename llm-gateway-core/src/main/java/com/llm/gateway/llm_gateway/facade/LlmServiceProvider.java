@@ -36,6 +36,7 @@ public interface LlmServiceProvider {
    * need to override this; the default throws {@link UnsupportedOperationException}.
    */
   default Flux<String> stream(LlmRequest request) {
-    throw new UnsupportedOperationException("Streaming not supported for provider: " + getProviderName());
+    throw new UnsupportedOperationException(
+        "Streaming not supported for provider: " + getProviderName());
   }
 }

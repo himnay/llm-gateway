@@ -1,7 +1,6 @@
 package com.llm.gateway.llm_gateway.cache;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -90,7 +89,9 @@ public class SemanticPromptCache {
       if (bestKey != null) {
         log.info(
             "CACHE | SEMANTIC HIT | provider={} | model={} | similarity={}",
-            provider, model, String.format("%.4f", bestScore));
+            provider,
+            model,
+            String.format("%.4f", bestScore));
         return Optional.of(bestKey);
       }
       return Optional.empty();

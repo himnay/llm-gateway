@@ -23,8 +23,8 @@ import reactor.core.scheduler.Schedulers;
  * {@code hallucination_suspected=true} flag is added to the response context.
  *
  * <p>When {@code block-on-suspicion=true}: check runs synchronously; responses exceeding the
- * threshold are replaced with the configured {@code block-message} and the context flag
- * {@code hallucination_blocked=true} is set.
+ * threshold are replaced with the configured {@code block-message} and the context flag {@code
+ * hallucination_blocked=true} is set.
  *
  * <p>NOTE: This is a heuristic signal (uncertainty phrases + knowledge-cutoff signals). It does not
  * detect all hallucinations and produces false positives for legitimate epistemic hedging. For
@@ -36,7 +36,7 @@ import reactor.core.scheduler.Schedulers;
 public class HallucinationMonitorAdvisor implements BaseAdvisor {
 
   static final String CTX_SUSPECTED = "hallucination_suspected";
-  static final String CTX_BLOCKED   = "hallucination_blocked";
+  static final String CTX_BLOCKED = "hallucination_blocked";
 
   private static final List<String> UNCERTAINTY =
       List.of(
@@ -103,12 +103,15 @@ public class HallucinationMonitorAdvisor implements BaseAdvisor {
       ChatClientResponse response, String text, String provider) {
     double score = score(text);
     if (score < properties.getThreshold()) {
-      if (score > 0) log.debug("GUARDRAIL | MINOR_UNCERTAINTY | provider={} | score={}", provider, score);
+      if (score > 0)
+        log.debug("GUARDRAIL | MINOR_UNCERTAINTY | provider={} | score={}", provider, score);
       return response;
     }
     log.warn(
         "GUARDRAIL | HALLUCINATION_BLOCKED | provider={} | score={} | threshold={}",
-        provider, score, properties.getThreshold());
+        provider,
+        score,
+        properties.getThreshold());
     metricsService.recordError(provider, "HALLUCINATION_BLOCKED");
 
     Map<String, Object> newCtx = new HashMap<>(response.context());
@@ -121,7 +124,9 @@ public class HallucinationMonitorAdvisor implements BaseAdvisor {
     if (score >= properties.getThreshold()) {
       log.warn(
           "GUARDRAIL | HALLUCINATION_SUSPECTED | provider={} | score={} | threshold={}",
-          provider, score, properties.getThreshold());
+          provider,
+          score,
+          properties.getThreshold());
       metricsService.recordError(provider, "HALLUCINATION_SUSPECTED");
     } else if (score > 0) {
       log.debug("GUARDRAIL | MINOR_UNCERTAINTY | provider={} | score={}", provider, score);
@@ -131,7 +136,7 @@ public class HallucinationMonitorAdvisor implements BaseAdvisor {
   private double score(String text) {
     String lower = text.toLowerCase();
     long uncertainty = UNCERTAINTY.stream().filter(lower::contains).count();
-    long signals     = SIGNALS.stream().filter(lower::contains).count();
+    long signals = SIGNALS.stream().filter(lower::contains).count();
     return uncertainty * 0.5 + signals * 1.0;
   }
 }

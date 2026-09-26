@@ -28,14 +28,14 @@ public class RequestLogService {
   private final DatabaseClient db;
 
   /**
-   * Persists an audit entry as a reactive chain. Callers subscribe fire-and-forget;
-   * errors are swallowed so a DB outage never impacts LLM traffic.
+   * Persists an audit entry as a reactive chain. Callers subscribe fire-and-forget; errors are
+   * swallowed so a DB outage never impacts LLM traffic.
    */
   public Mono<Void> log(
       String requestId, String clientId, LlmRequest request, LlmResponse response) {
     String promptHash = request.getPrompt() != null ? sha256(request.getPrompt()) : null;
     return db.sql(
-                """
+            """
                       INSERT INTO request_log
                           (request_id, correlation_id, provider, model, client_id,
                            prompt_hash, prompt_length, cache_hit, latency_ms,
@@ -60,10 +60,14 @@ public class RequestLogService {
         .bind("error", response.getError())
         .bind("sanitized", Boolean.TRUE.equals(response.getSanitized()))
         .then()
-        .onErrorResume(e -> {
-          log.warn("AUDIT | write error (non-fatal) | requestId={} | error={}", requestId, e.getMessage());
-          return Mono.empty();
-        });
+        .onErrorResume(
+            e -> {
+              log.warn(
+                  "AUDIT | write error (non-fatal) | requestId={} | error={}",
+                  requestId,
+                  e.getMessage());
+              return Mono.empty();
+            });
   }
 
   private static String sha256(String input) {

@@ -9,12 +9,12 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "llm.cost")
 public class CostTrackingProperties {
 
-    /** Master switch — set to false to skip cost estimation entirely. */
-    private boolean enabled = true;
+  /** Master switch — set to false to skip cost estimation entirely. */
+  private boolean enabled = true;
 
-    /** When true, the estimated cost (USD) is added to every LLM response as a response header. */
-    private boolean addResponseHeader = true;
+  /** When true, the estimated cost (USD) is added to every LLM response as a response header. */
+  private boolean addResponseHeader = true;
 
-    /** Name of the HTTP response header that carries the cost estimate. */
-    private String headerName = "X-LLM-Cost-USD";
+  /** Name of the HTTP response header that carries the cost estimate. */
+  private String headerName = "X-LLM-Cost-USD";
 }

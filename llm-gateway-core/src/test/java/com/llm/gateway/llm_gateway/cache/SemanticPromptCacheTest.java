@@ -1,5 +1,13 @@
 package com.llm.gateway.llm_gateway.cache;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,15 +18,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
-
-import java.util.Map;
-import java.util.Optional;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
 
 class SemanticPromptCacheTest {
 
@@ -59,13 +58,15 @@ class SemanticPromptCacheTest {
   }
 
   @Test
-  @DisplayName("returns the key of the most similar cached prompt when its similarity exceeds the threshold")
+  @DisplayName(
+      "returns the key of the most similar cached prompt when its similarity exceeds the threshold")
   void returnsKeyOfMostSimilarPromptAboveThreshold() throws Exception {
     when(embeddingModel.embed(anyString())).thenReturn(new float[] {1.0f, 0.0f});
     when(hashOps.entries("llm:cache:sem:openai:gpt-4o:vec"))
-        .thenReturn(Map.of(
-            "key-identical", objectMapper.writeValueAsString(new float[] {0.99f, 0.01f}),
-            "key-orthogonal", objectMapper.writeValueAsString(new float[] {0.0f, 1.0f})));
+        .thenReturn(
+            Map.of(
+                "key-identical", objectMapper.writeValueAsString(new float[] {0.99f, 0.01f}),
+                "key-orthogonal", objectMapper.writeValueAsString(new float[] {0.0f, 1.0f})));
 
     Optional<String> result = cache.findSimilarKey("openai", "gpt-4o", "summarize the report");
 
@@ -77,8 +78,8 @@ class SemanticPromptCacheTest {
   void returnsEmptyWhenNothingClearsThreshold() throws Exception {
     when(embeddingModel.embed(anyString())).thenReturn(new float[] {1.0f, 0.0f});
     when(hashOps.entries(anyString()))
-        .thenReturn(Map.of(
-            "key-different", objectMapper.writeValueAsString(new float[] {0.5f, 0.87f})));
+        .thenReturn(
+            Map.of("key-different", objectMapper.writeValueAsString(new float[] {0.5f, 0.87f})));
 
     assertThat(cache.findSimilarKey("openai", "gpt-4o", "prompt")).isEmpty();
   }
@@ -101,7 +102,8 @@ class SemanticPromptCacheTest {
   }
 
   @Test
-  @DisplayName("cosine() handles edge cases such as null vectors, mismatched lengths, and zero vectors")
+  @DisplayName(
+      "cosine() handles edge cases such as null vectors, mismatched lengths, and zero vectors")
   void cosineHandlesEdgeCases() {
     assertThat(SemanticPromptCache.cosine(new float[] {1, 0}, new float[] {1, 0})).isEqualTo(1.0);
     assertThat(SemanticPromptCache.cosine(new float[] {1, 0}, new float[] {0, 1})).isEqualTo(0.0);

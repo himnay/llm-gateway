@@ -25,13 +25,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 
 @Slf4j
 @Component
@@ -284,10 +284,11 @@ public class LlmHandler {
         .map(ctx -> ctx.getAuthentication())
         .filter(auth -> auth instanceof JwtAuthenticationToken)
         .cast(JwtAuthenticationToken.class)
-        .map(jwt -> {
-          request.setClientId(jwt.getToken().getSubject());
-          return request;
-        })
+        .map(
+            jwt -> {
+              request.setClientId(jwt.getToken().getSubject());
+              return request;
+            })
         .defaultIfEmpty(request);
   }
 
@@ -320,23 +321,32 @@ public class LlmHandler {
         .bodyValue(body);
   }
 
-  /** Overload for {@link LlmResponse}: adds the {@code X-LLM-Cost-USD} header when cost tracking is enabled. */
+  /**
+   * Overload for {@link LlmResponse}: adds the {@code X-LLM-Cost-USD} header when cost tracking is
+   * enabled.
+   */
   private Mono<ServerResponse> ok(LlmResponse resp, String correlationId) {
-    ServerResponse.BodyBuilder builder = ServerResponse.ok()
-        .contentType(MediaType.APPLICATION_JSON)
-        .header("X-Request-ID", correlationId);
+    ServerResponse.BodyBuilder builder =
+        ServerResponse.ok()
+            .contentType(MediaType.APPLICATION_JSON)
+            .header("X-Request-ID", correlationId);
 
     if (costTrackingProperties.isEnabled() && resp.getModel() != null) {
-      int inputTokens  = resp.getPromptTokens()     != null ? resp.getPromptTokens()     : 0;
+      int inputTokens = resp.getPromptTokens() != null ? resp.getPromptTokens() : 0;
       int outputTokens = resp.getCompletionTokens() != null ? resp.getCompletionTokens() : 0;
       TokenCostService.CostSummary summary =
           tokenCostService.summarize(resp.getModel(), inputTokens, outputTokens);
-      log.debug("COST | model={} inputTokens={} outputTokens={} estimatedCostUsd={}",
-          resp.getModel(), inputTokens, outputTokens,
+      log.debug(
+          "COST | model={} inputTokens={} outputTokens={} estimatedCostUsd={}",
+          resp.getModel(),
+          inputTokens,
+          outputTokens,
           String.format("%.6f", summary.estimatedCostUsd()));
       if (costTrackingProperties.isAddResponseHeader()) {
-        builder = builder.header(costTrackingProperties.getHeaderName(),
-            String.format("%.6f", summary.estimatedCostUsd()));
+        builder =
+            builder.header(
+                costTrackingProperties.getHeaderName(),
+                String.format("%.6f", summary.estimatedCostUsd()));
       }
     }
 

@@ -37,12 +37,12 @@ public class PromptTemplateService {
 
   @PostConstruct
   void initTemplateCache() {
-    templateCache = Map.of(
-        "openai",    new PromptTemplate(openAiSystemTemplate),
-        "anthropic", new PromptTemplate(anthropicSystemTemplate),
-        "ollama",    new PromptTemplate(ollamaSystemTemplate),
-        "default",   new PromptTemplate(defaultSystemTemplate)
-    );
+    templateCache =
+        Map.of(
+            "openai", new PromptTemplate(openAiSystemTemplate),
+            "anthropic", new PromptTemplate(anthropicSystemTemplate),
+            "ollama", new PromptTemplate(ollamaSystemTemplate),
+            "default", new PromptTemplate(defaultSystemTemplate));
     assistantStarterCached = new PromptTemplate(assistantStarterTemplate);
   }
 

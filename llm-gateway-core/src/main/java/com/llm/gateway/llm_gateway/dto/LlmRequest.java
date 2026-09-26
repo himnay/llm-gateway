@@ -60,11 +60,10 @@ public class LlmRequest {
   private String correlationId;
 
   /**
-   * JWT subject (client identity) extracted from the security context by the handler.
-   * Never deserialized from the request body.
+   * JWT subject (client identity) extracted from the security context by the handler. Never
+   * deserialized from the request body.
    */
-  @JsonIgnore
-  private String clientId;
+  @JsonIgnore private String clientId;
 
   /**
    * Optional citations from an upstream RAG call (e.g. llm-rag), supplied by the caller so the

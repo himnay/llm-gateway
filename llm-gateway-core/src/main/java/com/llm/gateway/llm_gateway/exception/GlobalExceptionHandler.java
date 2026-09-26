@@ -82,7 +82,8 @@ public class GlobalExceptionHandler implements WebExceptionHandler {
     }
   }
 
-  private static Map<String, Object> errorBody(HttpStatus status, String message, String path, List<?> details) {
+  private static Map<String, Object> errorBody(
+      HttpStatus status, String message, String path, List<?> details) {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("status", status.value());
     body.put("error", status.getReasonPhrase());

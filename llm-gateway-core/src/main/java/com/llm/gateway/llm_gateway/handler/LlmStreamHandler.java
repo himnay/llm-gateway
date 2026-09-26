@@ -1,7 +1,5 @@
 package com.llm.gateway.llm_gateway.handler;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 import com.llm.gateway.llm_gateway.config.FeatureFlagProperties;
 import com.llm.gateway.llm_gateway.dto.LlmRequest;
 import com.llm.gateway.llm_gateway.exception.LLMProviderNotSupportedException;
@@ -25,6 +23,8 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * SSE streaming handler: POST /llm/{provider}/stream
@@ -92,9 +92,12 @@ public class LlmStreamHandler {
                         Flux<String> tokens;
                         try {
                           tokens = providerRegistry.resolve(provider).stream(validated);
-                        } catch (LLMProviderNotSupportedException | UnsupportedOperationException ex) {
-                          tokens = Flux.error(new IllegalArgumentException(
-                              "Streaming not supported for provider: " + provider));
+                        } catch (LLMProviderNotSupportedException
+                            | UnsupportedOperationException ex) {
+                          tokens =
+                              Flux.error(
+                                  new IllegalArgumentException(
+                                      "Streaming not supported for provider: " + provider));
                         }
 
                         Flux<ServerSentEvent<String>> sseStream =
