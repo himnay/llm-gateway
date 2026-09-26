@@ -321,7 +321,13 @@ public class LlmGatewayFacade {
     }
   }
 
-  /** Tries each provider in order, returning the first successful response. */
+  /**
+   * Tries each provider in order, returning the first successful response.
+   *
+   * <p>Both failover methods call {@link #execute} on {@code this} on purpose: the self-call skips
+   * the proxy's shared {@code llm-gateway} retry/circuit breaker (one provider's failures must not
+   * block the fallbacks), while the per-provider breaker inside {@code execute} still applies.
+   */
   @Timed(
       value = "llm.gateway.execution",
       description = "End-to-end turnaround time of a single gateway LLM call",

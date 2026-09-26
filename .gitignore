@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Personal Claude Code settings (permissions, saved commands) — never commit
+.claude/settings.local.json

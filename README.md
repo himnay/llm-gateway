@@ -43,6 +43,16 @@ model catalog).
 <a id="architecture-overview"></a>
 ## <span style="color:hsl(139,80%,58%)">1. 🏗️ Architecture Overview</span>
 
+The job of an LLM gateway in one picture — authenticate the caller, rate-limit, route to one of several
+model back ends (with load balancing / failover), and meter usage and cost on the way; `llm-gateway-core`
+implements each of these boxes, with the provider services in place of the model deployments:
+
+<p align="center">
+  <img src="image/llm-gateway-concept.png" alt="Conceptual LLM gateway: an application calls through federated authentication, a rate limiter, a router and a load balancer, with monitoring, usage and cost tracking, to model deployments in several locations and on premises" width="760"/>
+</p>
+
+<p align="center"><sub>Diagram: <a href="https://learn.microsoft.com/azure/architecture/ai-ml/guide/azure-openai-gateway-guide">Azure Architecture Center — Access Azure OpenAI and other language models through a gateway</a>, CC BY 4.0.</sub></p>
+
 ```
 Client
   │   Authorization: Bearer <jwt> (when auth enabled)
@@ -516,10 +526,10 @@ removes real coupling, not for its own sake:
 
 | Layer           | Technology                                                           |
 |-----------------|----------------------------------------------------------------------|
-| Runtime         | Java 25, Spring Boot 4.1.0                                           |
+| Runtime         | Java 25, Spring Boot 4.1.1                                           |
 | Web             | Spring WebFlux (reactive, non-blocking)                              |
 | Security        | Spring Security WebFlux + PostgreSQL API key table                   |
-| LLM Integration | Spring AI 2.0.0                                                      |
+| LLM Integration | Spring AI 2.0.1                                                      |
 | LLM Providers   | OpenAI, Anthropic Claude, Ollama, Google Gemini, Cohere, HuggingFace |
 | Guardrails      | In-process chain + LangChain/FastAPI sidecar (REST, Docker)          |
 | Cache + Memory  | Redis (Spring Data Redis / Lettuce)                                  |
@@ -2019,7 +2029,7 @@ Security, correctness, and feature improvements:
 
 ### <span style="color:hsl(92,80%,58%)">Runtime Migration: Java 21 → 25, Spring AI → 2.0.0</span>
 
-This service now targets **Java 25** and **Spring AI 2.0.0** (up from Java 21 and Spring AI 2.0.0-M8), inherited from the shared `super-pom` / `llm-bom` chain — no module-level `java.version`, `maven.compiler.release`, or `spring-ai.version` override exists in this repo's `pom.xml`, so the bump required no POM edits here. The CI workflow (`.github/workflows/ci.yml`) was updated to provision JDK 25 via `actions/setup-java@v4` (it previously pinned JDK 21).
+This service now targets **Java 25** and **Spring AI 2.0.1** (up from Java 21 and Spring AI 2.0.0-M8), inherited from the shared `super-pom` / `llm-bom` chain — no module-level `java.version`, `maven.compiler.release`, or `spring-ai.version` override exists in this repo's `pom.xml`, so the bump required no POM edits here. The CI workflow (`.github/workflows/ci.yml`) was updated to provision JDK 25 via `actions/setup-java@v4` (it previously pinned JDK 21).
 
 **Verified in this environment** (JDK 25, Docker available):
 
