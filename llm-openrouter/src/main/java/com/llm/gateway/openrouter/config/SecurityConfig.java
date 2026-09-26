@@ -62,10 +62,10 @@ public class SecurityConfig {
             a ->
                 a.pathMatchers("/actuator/**")
                     .permitAll()
+                    // Matchers see the path inside spring.webflux.base-path (/openrouter/v1);
+                    // springdoc serves its default /swagger-ui.html and /v3/api-docs under it.
                     .pathMatchers(
-                        "/openrouter/v1/swagger-ui.html",
-                        "/openrouter/v1/swagger-ui/**",
-                        "/openrouter/v1/api-docs/**")
+                        "/swagger-ui.html", "/swagger-ui/**", "/webjars/**", "/v3/api-docs/**")
                     .permitAll()
                     .anyExchange()
                     .authenticated())

@@ -1670,9 +1670,10 @@ java -jar llm-openrouter/target/llm-openrouter-*.jar
 CI (`.github/workflows/ci.yml`) installs the parent POM chain, runs `mvn spotless:check`, then
 `mvn clean verify -DskipITs` on every push.
 
-**Known issue:** Swagger UI loads at `/llm/v1/swagger-ui.html`, but generating the OpenAPI document
-(`/llm/v1/api-docs`) never completes with the current springdoc and WebFlux functional routes. It
-predates the Spring Boot 4.1.1 upgrade; the API tables in section 12 are the reference meanwhile.
+**Known issue:** Swagger UI loads at `/llm/v1/swagger-ui.html` (and `/openrouter/v1/swagger-ui.html`),
+but generating the OpenAPI document (`/llm/v1/api-docs`, `/openrouter/v1/v3/api-docs`) never
+completes with the current springdoc on WebFlux with a `spring.webflux.base-path`. It predates the
+Spring Boot 4.1.1 upgrade; the API tables in section 12 are the reference meanwhile.
 
 ### <span style="color:hsl(340,80%,58%)">Code formatting (Spotless)</span>
 
