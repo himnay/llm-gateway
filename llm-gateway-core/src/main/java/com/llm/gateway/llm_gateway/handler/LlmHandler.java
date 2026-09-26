@@ -22,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.codec.DecodingException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -30,6 +31,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
+import org.springframework.web.server.ServerWebInputException;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -363,6 +365,9 @@ public class LlmHandler {
         || ex instanceof LLMProviderNotSupportedException
         || ex instanceof IllegalArgumentException) {
       return ServerResponse.badRequest().bodyValue(Map.of("error", ex.getMessage()));
+    }
+    if (ex instanceof DecodingException || ex instanceof ServerWebInputException) {
+      return ServerResponse.badRequest().bodyValue(Map.of("error", "Malformed request body"));
     }
     if (ex instanceof TimeoutException) {
       return ServerResponse.status(HttpStatus.GATEWAY_TIMEOUT)

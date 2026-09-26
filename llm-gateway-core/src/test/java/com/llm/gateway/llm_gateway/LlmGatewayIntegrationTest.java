@@ -296,4 +296,23 @@ class LlmGatewayIntegrationTest {
         .expectStatus()
         .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
   }
+
+  @Test
+  @DisplayName("GET on an unknown path returns 404, not 500")
+  void unknownPath_returns404() {
+    webTestClient.get().uri("/does-not-exist").exchange().expectStatus().isNotFound();
+  }
+
+  @Test
+  @DisplayName("Malformed JSON body returns 400, not 500")
+  void malformedJson_returns400() {
+    webTestClient
+        .post()
+        .uri("/query")
+        .contentType(MediaType.APPLICATION_JSON)
+        .bodyValue("{not json")
+        .exchange()
+        .expectStatus()
+        .isBadRequest();
+  }
 }

@@ -8,10 +8,12 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.codec.DecodingException;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebExceptionHandler;
 import reactor.core.publisher.Mono;
@@ -63,6 +65,28 @@ public class GlobalExceptionHandler implements WebExceptionHandler {
       log.error("Internal gateway error", ex);
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       body = errorBody(status, "An internal error occurred. Please try again.", path, List.of());
+
+    } else if (ex instanceof DecodingException) {
+      // Functional endpoints surface unreadable JSON as a bare DecodingException
+      log.debug("Malformed request body | {}", ex.getMessage());
+      status = HttpStatus.BAD_REQUEST;
+      body = errorBody(status, "Malformed request body", path, List.of());
+
+    } else if (ex instanceof ResponseStatusException rse) {
+      // Spring's own 4xx/5xx signals (no route -> 404, wrong method -> 405, unreadable JSON -> 400,
+      // ...). This handler runs before Spring's ResponseStatusExceptionHandler, so keep their
+      // status.
+      status = HttpStatus.resolve(rse.getStatusCode().value());
+      if (status == null) {
+        status = HttpStatus.INTERNAL_SERVER_ERROR;
+      }
+      if (status.is5xxServerError()) {
+        log.error("Request failed | {}", ex.getMessage(), ex);
+      } else {
+        log.debug("Request rejected | {} | {}", status, ex.getMessage());
+      }
+      String reason = rse.getReason() != null ? rse.getReason() : status.getReasonPhrase();
+      body = errorBody(status, reason, path, List.of());
 
     } else {
       log.error("Unhandled exception", ex);
