@@ -526,7 +526,7 @@ removes real coupling, not for its own sake:
 
 | Layer           | Technology                                                           |
 |-----------------|----------------------------------------------------------------------|
-| Runtime         | Java 25, Spring Boot 4.1.1                                           |
+| Runtime         | Java 27, Spring Boot 4.1.1                                           |
 | Web             | Spring WebFlux (reactive, non-blocking)                              |
 | Security        | Spring Security WebFlux + PostgreSQL API key table                   |
 | LLM Integration | Spring AI 2.0.1                                                      |
@@ -1695,11 +1695,12 @@ mvn spotless:check   # fails the build if files aren't formatted
 mvn spotless:apply   # reformats in place
 ```
 
-> google-java-format relies on internal `javac` APIs that aren't yet compatible with JDK 25's
-> compiler. Run `spotless:apply`/`spotless:check` under JDK 21+ (e.g.
-> `JAVA_HOME=$(/usr/libexec/java_home -v21) mvn spotless:apply`) — the formatted output is
-> plain Java source with no JDK-version coupling, so this only affects which JDK runs the
-> formatter, not which JDK compiles/runs the app.
+> google-java-format uses internal `javac` APIs, so a formatter release can lag behind a new JDK.
+> The Spotless 3.10.3 default used here runs on JDK 27, the JDK this project builds with, and CI
+> runs `spotless:check` on Temurin 27. On JDK 27 Spotless prints a
+> `sun.misc.Unsafe::staticFieldBase` deprecation warning, which is harmless. If a future JDK
+> breaks the formatter, run it under an older JDK: the formatted output is plain Java source, so
+> that only changes which JDK runs the formatter, not which JDK compiles or runs the app.
 
 ### <span style="color:hsl(117,80%,58%)">Dependency vulnerability scanning (OWASP)</span>
 

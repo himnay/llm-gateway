@@ -8,7 +8,13 @@
 # secret) at that repository — this Dockerfile does not vendor it.
 
 # ── Build stage ───────────────────────────────────────────────────────────────
-FROM maven:3.9-eclipse-temurin-25 AS build
+# Java 27 images: eclipse-temurin:27 wasn't on Docker Hub yet (Sept 2026), so the build and runtime stages use
+# SapMachine 27, an OpenJDK build that is also a Docker Official Image.
+# There is no maven:*-27 image either, so the build stage copies Maven from the official Maven
+# image; Maven itself runs on any recent JDK.
+FROM sapmachine:27-jdk-ubuntu AS build
+COPY --from=maven:3.9 /usr/share/maven /usr/share/maven
+RUN ln -s /usr/share/maven/bin/mvn /usr/bin/mvn
 ARG MODULE=llm-gateway-core
 WORKDIR /build
 
@@ -25,7 +31,7 @@ RUN --mount=type=secret,id=maven_settings,target=/root/.m2/settings.xml \
     && cp ${MODULE}/target/${MODULE}-*.jar /build/app.jar
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM eclipse-temurin:25-jre AS runtime
+FROM sapmachine:27-jre-ubuntu AS runtime
 ARG MODULE=llm-gateway-core
 ARG PORT=8080
 
@@ -36,7 +42,8 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=build /build/app.jar app.jar
-RUN chown gateway:gateway app.jar
+# llm-gateway-core's logback config writes logs/llm-gateway.json under /app, which the gateway user must be able to create
+RUN mkdir -p logs && chown gateway:gateway app.jar logs
 
 USER gateway
 EXPOSE ${PORT}
