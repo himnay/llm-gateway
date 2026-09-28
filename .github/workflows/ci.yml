@@ -42,7 +42,7 @@ jobs:
         run: mvn -B clean verify -DskipITs
         working-directory: llm-gateway
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           files: llm-gateway/target/site/jacoco/jacoco.xml
 
