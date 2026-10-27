@@ -84,7 +84,7 @@ jobs:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
       - name: Upload dependency-check report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dependency-check-report
           path: llm-gateway/target/dependency-check-report.html
