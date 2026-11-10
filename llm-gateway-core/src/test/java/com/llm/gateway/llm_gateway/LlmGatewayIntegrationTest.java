@@ -95,10 +95,9 @@ class LlmGatewayIntegrationTest {
         .expectStatus()
         .isOk()
         .expectBody(Map.class)
-        .value(
-            body -> {
-              assertThat(body).containsKeys("openai", "anthropic", "ollama", "google");
-            });
+        .value(body -> {
+          assertThat(body).containsKeys("openai", "anthropic", "ollama", "google");
+        });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -121,11 +120,10 @@ class LlmGatewayIntegrationTest {
         .expectStatus()
         .isOk()
         .expectBody(LlmResponse.class)
-        .value(
-            r -> {
-              assertThat(r.getContent()).isEqualTo("Hello from OpenAI");
-              assertThat(r.getError()).isNull();
-            });
+        .value(r -> {
+          assertThat(r.getContent()).isEqualTo("Hello from OpenAI");
+          assertThat(r.getError()).isNull();
+        });
 
     verify(facade).executeWithAutoFailover(eq("openai"), any());
   }

@@ -77,13 +77,12 @@ public class OpenAiService implements LlmServiceProvider {
                       .temperature(
                           request.getTemperature() != null ? request.getTemperature() : 0.7)
                       .maxTokens(request.getMaxTokens() != null ? request.getMaxTokens() : 2048))
-              .advisors(
-                  a -> {
-                    if (request.getSessionId() != null) {
-                      a.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
-                    }
-                    a.param(MetricsAdvisor.PROVIDER_PARAM, PROVIDER);
-                  })
+              .advisors(a -> {
+                if (request.getSessionId() != null) {
+                  a.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
+                }
+                a.param(MetricsAdvisor.PROVIDER_PARAM, PROVIDER);
+              })
               .tools(gatewayTools)
               .call()
               .chatResponse();
@@ -124,13 +123,12 @@ public class OpenAiService implements LlmServiceProvider {
             OpenAiChatOptions.builder()
                 .model(model)
                 .temperature(request.getTemperature() != null ? request.getTemperature() : 0.7))
-        .advisors(
-            a -> {
-              if (request.getSessionId() != null) {
-                a.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
-              }
-              a.param(MetricsAdvisor.PROVIDER_PARAM, PROVIDER);
-            })
+        .advisors(a -> {
+          if (request.getSessionId() != null) {
+            a.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
+          }
+          a.param(MetricsAdvisor.PROVIDER_PARAM, PROVIDER);
+        })
         .stream()
         .content();
   }

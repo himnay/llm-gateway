@@ -56,28 +56,26 @@ public class LlmHandler {
   public Mono<ServerResponse> query(ServerRequest req) {
     String cid = correlationId(req);
     return req.bodyToMono(LlmRequest.class)
-        .doOnNext(
-            r -> {
-              r.setCorrelationId(cid);
-              validate(r);
-            })
+        .doOnNext(r -> {
+          r.setCorrelationId(cid);
+          validate(r);
+        })
         .flatMap(LlmHandler::enrichWithClientId)
-        .flatMap(
-            request -> {
-              String provider =
-                  request.getProvider() != null
-                      ? request.getProvider().key()
-                      : LlmProvider.OPENAI.key();
-              log.info(
-                  "HANDLER | query | provider={} | session={} | cid={}",
-                  provider,
-                  request.getSessionId(),
-                  cid);
-              // Auto-failover: if OpenAI key is wrong, gateway silently routes to next provider
-              return Mono.fromCallable(() -> facade.executeWithAutoFailover(provider, request))
-                  .subscribeOn(Schedulers.boundedElastic())
-                  .timeout(Duration.ofSeconds(timeoutSeconds));
-            })
+        .flatMap(request -> {
+          String provider =
+              request.getProvider() != null
+                  ? request.getProvider().key()
+                  : LlmProvider.OPENAI.key();
+          log.info(
+              "HANDLER | query | provider={} | session={} | cid={}",
+              provider,
+              request.getSessionId(),
+              cid);
+          // Auto-failover: if OpenAI key is wrong, gateway silently routes to next provider
+          return Mono.fromCallable(() -> facade.executeWithAutoFailover(provider, request))
+              .subscribeOn(Schedulers.boundedElastic())
+              .timeout(Duration.ofSeconds(timeoutSeconds));
+        })
         .flatMap(resp -> ok(resp, cid))
         .onErrorResume(this::errorResponse);
   }
@@ -86,25 +84,23 @@ public class LlmHandler {
   public Mono<ServerResponse> failoverQuery(ServerRequest req) {
     String cid = correlationId(req);
     return req.bodyToMono(LlmRequest.class)
-        .doOnNext(
-            r -> {
-              r.setCorrelationId(cid);
-              validate(r);
-            })
-        .flatMap(
-            request -> {
-              List<String> chain =
-                  (request.getProviders() != null && !request.getProviders().isEmpty())
-                      ? request.getProviders().stream().map(LlmProvider::key).toList()
-                      : List.of(
-                          LlmProvider.OPENAI.key(),
-                          LlmProvider.ANTHROPIC.key(),
-                          LlmProvider.OLLAMA.key());
-              log.info("HANDLER | failover | chain={} | cid={}", chain, cid);
-              return Mono.fromCallable(() -> facade.executeWithFailover(chain, request))
-                  .subscribeOn(Schedulers.boundedElastic())
-                  .timeout(Duration.ofSeconds(timeoutSeconds));
-            })
+        .doOnNext(r -> {
+          r.setCorrelationId(cid);
+          validate(r);
+        })
+        .flatMap(request -> {
+          List<String> chain =
+              (request.getProviders() != null && !request.getProviders().isEmpty())
+                  ? request.getProviders().stream().map(LlmProvider::key).toList()
+                  : List.of(
+                      LlmProvider.OPENAI.key(),
+                      LlmProvider.ANTHROPIC.key(),
+                      LlmProvider.OLLAMA.key());
+          log.info("HANDLER | failover | chain={} | cid={}", chain, cid);
+          return Mono.fromCallable(() -> facade.executeWithFailover(chain, request))
+              .subscribeOn(Schedulers.boundedElastic())
+              .timeout(Duration.ofSeconds(timeoutSeconds));
+        })
         .flatMap(resp -> ok(resp, cid))
         .onErrorResume(this::errorResponse);
   }
@@ -114,16 +110,14 @@ public class LlmHandler {
     String provider = req.pathVariable("provider");
     String cid = correlationId(req);
     return req.bodyToMono(LlmRequest.class)
-        .doOnNext(
-            r -> {
-              r.setCorrelationId(cid);
-              validate(r);
-            })
-        .flatMap(
-            request ->
-                Mono.fromCallable(() -> facade.execute(provider, request))
-                    .subscribeOn(Schedulers.boundedElastic())
-                    .timeout(Duration.ofSeconds(timeoutSeconds)))
+        .doOnNext(r -> {
+          r.setCorrelationId(cid);
+          validate(r);
+        })
+        .flatMap(request ->
+            Mono.fromCallable(() -> facade.execute(provider, request))
+                .subscribeOn(Schedulers.boundedElastic())
+                .timeout(Duration.ofSeconds(timeoutSeconds)))
         .flatMap(resp -> ok(resp, cid))
         .onErrorResume(this::errorResponse);
   }
@@ -132,37 +126,35 @@ public class LlmHandler {
   public Mono<ServerResponse> chat(ServerRequest req) {
     String cid = correlationId(req);
     return req.bodyToMono(LlmRequest.class)
-        .doOnNext(
-            r -> {
-              r.setCorrelationId(cid);
-              validate(r);
-            })
-        .flatMap(
-            request -> {
-              if (request.getSessionId() == null || request.getSessionId().isBlank()) {
-                return ServerResponse.badRequest()
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(
-                        LlmResponse.builder()
-                            .error("session_id is required for multi-turn /chat")
-                            .timestamp(System.currentTimeMillis())
-                            .build());
-              }
-              String provider =
-                  request.getProvider() != null
-                      ? request.getProvider().key()
-                      : LlmProvider.OPENAI.key();
-              log.info(
-                  "HANDLER | chat | provider={} | session={} | cid={}",
-                  provider,
-                  request.getSessionId(),
-                  cid);
-              // Auto-failover: auth/config errors silently route to next provider
-              return Mono.fromCallable(() -> facade.executeWithAutoFailover(provider, request))
-                  .subscribeOn(Schedulers.boundedElastic())
-                  .timeout(Duration.ofSeconds(timeoutSeconds))
-                  .flatMap(resp -> ok(resp, cid));
-            })
+        .doOnNext(r -> {
+          r.setCorrelationId(cid);
+          validate(r);
+        })
+        .flatMap(request -> {
+          if (request.getSessionId() == null || request.getSessionId().isBlank()) {
+            return ServerResponse.badRequest()
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(
+                    LlmResponse.builder()
+                        .error("session_id is required for multi-turn /chat")
+                        .timestamp(System.currentTimeMillis())
+                        .build());
+          }
+          String provider =
+              request.getProvider() != null
+                  ? request.getProvider().key()
+                  : LlmProvider.OPENAI.key();
+          log.info(
+              "HANDLER | chat | provider={} | session={} | cid={}",
+              provider,
+              request.getSessionId(),
+              cid);
+          // Auto-failover: auth/config errors silently route to next provider
+          return Mono.fromCallable(() -> facade.executeWithAutoFailover(provider, request))
+              .subscribeOn(Schedulers.boundedElastic())
+              .timeout(Duration.ofSeconds(timeoutSeconds))
+              .flatMap(resp -> ok(resp, cid));
+        })
         .onErrorResume(this::errorResponse);
   }
 
@@ -170,16 +162,14 @@ public class LlmHandler {
   public Mono<ServerResponse> extractStructured(ServerRequest req) {
     String cid = correlationId(req);
     return req.bodyToMono(LlmRequest.class)
-        .doOnNext(
-            r -> {
-              r.setCorrelationId(cid);
-              validate(r);
-            })
-        .flatMap(
-            request ->
-                Mono.fromCallable(() -> facade.executeStructured(request))
-                    .subscribeOn(Schedulers.boundedElastic())
-                    .timeout(Duration.ofSeconds(timeoutSeconds)))
+        .doOnNext(r -> {
+          r.setCorrelationId(cid);
+          validate(r);
+        })
+        .flatMap(request ->
+            Mono.fromCallable(() -> facade.executeStructured(request))
+                .subscribeOn(Schedulers.boundedElastic())
+                .timeout(Duration.ofSeconds(timeoutSeconds)))
         .flatMap(resp -> ok(resp, cid))
         .onErrorResume(this::errorResponse);
   }
@@ -247,21 +237,20 @@ public class LlmHandler {
     if (providerProperties.getProviders() != null) {
       providerProperties
           .getProviders()
-          .forEach(
-              (provider, cfg) -> {
-                if (!cfg.isEnabled()) return;
-                String key = provider.key();
-                List<String> alts = alternatives.getOrDefault(key, List.of());
-                List<String> models = new java.util.ArrayList<>();
-                // Configured default first if different from the alternatives default
-                if (cfg.getModel() != null && !cfg.getModel().isBlank()) {
-                  models.add(cfg.getModel());
-                  alts.stream().filter(m -> !m.equals(cfg.getModel())).forEach(models::add);
-                } else {
-                  models.addAll(alts);
-                }
-                result.put(key, models);
-              });
+          .forEach((provider, cfg) -> {
+            if (!cfg.isEnabled()) return;
+            String key = provider.key();
+            List<String> alts = alternatives.getOrDefault(key, List.of());
+            List<String> models = new java.util.ArrayList<>();
+            // Configured default first if different from the alternatives default
+            if (cfg.getModel() != null && !cfg.getModel().isBlank()) {
+              models.add(cfg.getModel());
+              alts.stream().filter(m -> !m.equals(cfg.getModel())).forEach(models::add);
+            } else {
+              models.addAll(alts);
+            }
+            result.put(key, models);
+          });
     }
 
     return ok(result);
@@ -286,11 +275,10 @@ public class LlmHandler {
         .map(ctx -> ctx.getAuthentication())
         .filter(auth -> auth instanceof JwtAuthenticationToken)
         .cast(JwtAuthenticationToken.class)
-        .map(
-            jwt -> {
-              request.setClientId(jwt.getToken().getSubject());
-              return request;
-            })
+        .map(jwt -> {
+          request.setClientId(jwt.getToken().getSubject());
+          return request;
+        })
         .defaultIfEmpty(request);
   }
 

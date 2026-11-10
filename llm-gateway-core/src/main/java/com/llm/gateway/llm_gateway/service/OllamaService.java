@@ -76,13 +76,12 @@ public class OllamaService implements LlmServiceProvider {
                       .model(model)
                       .temperature(
                           request.getTemperature() != null ? request.getTemperature() : 0.7))
-              .advisors(
-                  a -> {
-                    if (request.getSessionId() != null) {
-                      a.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
-                    }
-                    a.param(MetricsAdvisor.PROVIDER_PARAM, PROVIDER);
-                  })
+              .advisors(a -> {
+                if (request.getSessionId() != null) {
+                  a.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
+                }
+                a.param(MetricsAdvisor.PROVIDER_PARAM, PROVIDER);
+              })
               .tools(gatewayTools)
               .call()
               .chatResponse();
@@ -119,13 +118,12 @@ public class OllamaService implements LlmServiceProvider {
             OllamaChatOptions.builder()
                 .model(model)
                 .temperature(request.getTemperature() != null ? request.getTemperature() : 0.7))
-        .advisors(
-            a -> {
-              if (request.getSessionId() != null) {
-                a.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
-              }
-              a.param(MetricsAdvisor.PROVIDER_PARAM, PROVIDER);
-            })
+        .advisors(a -> {
+          if (request.getSessionId() != null) {
+            a.param(ChatMemory.CONVERSATION_ID, request.getSessionId());
+          }
+          a.param(MetricsAdvisor.PROVIDER_PARAM, PROVIDER);
+        })
         .tools(gatewayTools)
         .stream()
         .content();

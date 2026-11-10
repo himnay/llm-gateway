@@ -74,9 +74,8 @@ class ActuatorSecurityIntegrationTest {
         .uri(path)
         .exchange()
         .expectStatus()
-        .value(
-            status ->
-                org.assertj.core.api.Assertions.assertThat(status)
-                    .isNotEqualTo(HttpStatus.UNAUTHORIZED.value()));
+        .value(status ->
+            org.assertj.core.api.Assertions.assertThat(status)
+                .isNotEqualTo(HttpStatus.UNAUTHORIZED.value()));
   }
 }

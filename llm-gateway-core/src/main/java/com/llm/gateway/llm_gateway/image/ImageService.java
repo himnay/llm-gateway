@@ -53,11 +53,10 @@ public class ImageService {
 
       List<String> images =
           response.getResults().stream()
-              .map(
-                  result ->
-                      "url".equalsIgnoreCase(format)
-                          ? result.getOutput().getUrl()
-                          : result.getOutput().getB64Json())
+              .map(result ->
+                  "url".equalsIgnoreCase(format)
+                      ? result.getOutput().getUrl()
+                      : result.getOutput().getB64Json())
               .toList();
 
       log.info(

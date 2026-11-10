@@ -52,9 +52,8 @@ class OpenRouterControllerTest {
         .expectHeader()
         .valueEquals("X-Request-ID", "test-cid")
         .expectBody(OpenRouterResponse.class)
-        .value(
-            body ->
-                org.assertj.core.api.Assertions.assertThat(body.getContent()).isEqualTo("Hello!"));
+        .value(body ->
+            org.assertj.core.api.Assertions.assertThat(body.getContent()).isEqualTo("Hello!"));
   }
 
   @Test

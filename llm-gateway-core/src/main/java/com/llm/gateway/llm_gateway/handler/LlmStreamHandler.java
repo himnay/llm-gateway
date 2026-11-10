@@ -64,68 +64,59 @@ public class LlmStreamHandler {
     String cid = correlationId(req);
 
     return req.bodyToMono(LlmRequest.class)
-        .flatMap(
-            request -> {
-              request.setCorrelationId(cid);
+        .flatMap(request -> {
+          request.setCorrelationId(cid);
 
-              if (request.getPrompt() == null || request.getPrompt().isBlank()) {
-                return ServerResponse.badRequest().bodyValue(Map.of("error", "prompt is required"));
-              }
+          if (request.getPrompt() == null || request.getPrompt().isBlank()) {
+            return ServerResponse.badRequest().bodyValue(Map.of("error", "prompt is required"));
+          }
 
-              // Run guardrail chain synchronously (blocking on bounded-elastic
-              // so the reactive chain isn't blocked on the event-loop thread).
-              return Mono.fromCallable(
-                      () -> {
-                        GuardrailContext ctx = new GuardrailContext(provider, cid, request);
-                        guardrailChain.apply(ctx);
-                        return request;
-                      })
-                  .subscribeOn(Schedulers.boundedElastic())
-                  .flatMap(
-                      validated -> {
-                        log.info(
-                            "HANDLER | stream | provider={} | session={} | cid={}",
-                            provider,
-                            validated.getSessionId(),
-                            cid);
+          // Run guardrail chain synchronously (blocking on bounded-elastic
+          // so the reactive chain isn't blocked on the event-loop thread).
+          return Mono.fromCallable(
+                  () -> {
+                    GuardrailContext ctx = new GuardrailContext(provider, cid, request);
+                    guardrailChain.apply(ctx);
+                    return request;
+                  })
+              .subscribeOn(Schedulers.boundedElastic())
+              .flatMap(validated -> {
+                log.info(
+                    "HANDLER | stream | provider={} | session={} | cid={}",
+                    provider,
+                    validated.getSessionId(),
+                    cid);
 
-                        Flux<String> tokens;
-                        try {
-                          tokens = providerRegistry.resolve(provider).stream(validated);
-                        } catch (LLMProviderNotSupportedException
-                            | UnsupportedOperationException ex) {
-                          tokens =
-                              Flux.error(
-                                  new IllegalArgumentException(
-                                      "Streaming not supported for provider: " + provider));
-                        }
+                Flux<String> tokens;
+                try {
+                  tokens = providerRegistry.resolve(provider).stream(validated);
+                } catch (LLMProviderNotSupportedException | UnsupportedOperationException ex) {
+                  tokens =
+                      Flux.error(
+                          new IllegalArgumentException(
+                              "Streaming not supported for provider: " + provider));
+                }
 
-                        Flux<ServerSentEvent<String>> sseStream =
-                            tokens
-                                .timeout(Duration.ofSeconds(streamTimeoutSeconds))
-                                .map(
-                                    token ->
-                                        ServerSentEvent.<String>builder()
-                                            .event("token")
-                                            .data(token)
-                                            .build())
-                                .onErrorResume(
-                                    ex -> {
-                                      log.error(
-                                          "STREAM | error | provider={} | cid={} | {}",
-                                          provider,
-                                          cid,
-                                          ex.getMessage());
-                                      return Flux.just(
-                                          buildErrorEvent(cid, "PROVIDER_ERROR", ex.getMessage()));
-                                    });
+                Flux<ServerSentEvent<String>> sseStream =
+                    tokens
+                        .timeout(Duration.ofSeconds(streamTimeoutSeconds))
+                        .map(token ->
+                            ServerSentEvent.<String>builder().event("token").data(token).build())
+                        .onErrorResume(ex -> {
+                          log.error(
+                              "STREAM | error | provider={} | cid={} | {}",
+                              provider,
+                              cid,
+                              ex.getMessage());
+                          return Flux.just(buildErrorEvent(cid, "PROVIDER_ERROR", ex.getMessage()));
+                        });
 
-                        return ServerResponse.ok()
-                            .contentType(MediaType.TEXT_EVENT_STREAM)
-                            .header("X-Request-ID", cid)
-                            .body(sseStream, ServerSentEvent.class);
-                      });
-            })
+                return ServerResponse.ok()
+                    .contentType(MediaType.TEXT_EVENT_STREAM)
+                    .header("X-Request-ID", cid)
+                    .body(sseStream, ServerSentEvent.class);
+              });
+        })
         .onErrorResume(
             PromptValidationException.class,
             pve ->
@@ -133,11 +124,10 @@ public class LlmStreamHandler {
                     .bodyValue(
                         Map.of(
                             "error", "Prompt validation failed", "details", pve.getViolations())))
-        .onErrorResume(
-            ex -> {
-              log.error("STREAM | setup failed | cid={} | {}", cid, ex.getMessage());
-              return ServerResponse.badRequest().bodyValue(Map.of("error", ex.getMessage()));
-            });
+        .onErrorResume(ex -> {
+          log.error("STREAM | setup failed | cid={} | {}", cid, ex.getMessage());
+          return ServerResponse.badRequest().bodyValue(Map.of("error", ex.getMessage()));
+        });
   }
 
   /**

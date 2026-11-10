@@ -526,7 +526,7 @@ removes real coupling, not for its own sake:
 
 | Layer           | Technology                                                           |
 |-----------------|----------------------------------------------------------------------|
-| Runtime         | Java 27, Spring Boot 4.1.1                                           |
+| Runtime         | Java 27, Spring Boot 4.1.2                                           |
 | Web             | Spring WebFlux (reactive, non-blocking)                              |
 | Security        | Spring Security WebFlux + PostgreSQL API key table                   |
 | LLM Integration | Spring AI 2.0.1                                                      |

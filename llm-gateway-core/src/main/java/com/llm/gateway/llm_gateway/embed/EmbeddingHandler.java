@@ -42,57 +42,53 @@ public class EmbeddingHandler {
             .orElseGet(() -> UUID.randomUUID().toString());
 
     return req.bodyToMono(com.llm.gateway.llm_gateway.embed.EmbeddingRequest.class)
-        .flatMap(
-            request -> {
-              if (request.getText() == null || request.getText().isBlank()) {
-                return ServerResponse.badRequest().bodyValue(Map.of("error", "'text' is required"));
-              }
+        .flatMap(request -> {
+          if (request.getText() == null || request.getText().isBlank()) {
+            return ServerResponse.badRequest().bodyValue(Map.of("error", "'text' is required"));
+          }
 
-              log.info("HANDLER | embed | cid={} | textLength={}", cid, request.getText().length());
+          log.info("HANDLER | embed | cid={} | textLength={}", cid, request.getText().length());
 
-              return Mono.fromCallable(
-                      () -> {
-                        EmbeddingResponse response =
-                            embeddingModel.call(
-                                new EmbeddingRequest(List.of(request.getText()), null));
+          return Mono.fromCallable(
+                  () -> {
+                    EmbeddingResponse response =
+                        embeddingModel.call(new EmbeddingRequest(List.of(request.getText()), null));
 
-                        float[] raw = response.getResult().getOutput();
-                        List<Double> vec = new java.util.ArrayList<>(raw.length);
-                        for (float v : raw) vec.add((double) v);
+                    float[] raw = response.getResult().getOutput();
+                    List<Double> vec = new java.util.ArrayList<>(raw.length);
+                    for (float v : raw) vec.add((double) v);
 
-                        String model =
-                            response.getMetadata() != null
-                                ? response.getMetadata().getModel()
-                                : "unknown";
-                        return com.llm.gateway.llm_gateway.embed.EmbeddingResponse.builder()
-                            .provider("openai")
-                            .model(model)
-                            .embedding(vec)
-                            .dimensions(raw.length)
-                            .requestId(cid)
-                            .timestamp(System.currentTimeMillis())
-                            .build();
-                      })
-                  .subscribeOn(Schedulers.boundedElastic())
-                  .timeout(Duration.ofSeconds(30))
-                  .flatMap(
-                      resp ->
-                          ServerResponse.ok()
-                              .contentType(MediaType.APPLICATION_JSON)
-                              .header("X-Request-ID", cid)
-                              .bodyValue(resp));
-            })
-        .onErrorResume(
-            ex -> {
-              log.error("HANDLER | embed failed | cid={} | {}", cid, ex.getMessage());
-              return ServerResponse.status(502)
-                  .contentType(MediaType.APPLICATION_JSON)
-                  .bodyValue(
-                      com.llm.gateway.llm_gateway.embed.EmbeddingResponse.builder()
-                          .error(ex.getMessage())
-                          .requestId(cid)
-                          .timestamp(System.currentTimeMillis())
-                          .build());
-            });
+                    String model =
+                        response.getMetadata() != null
+                            ? response.getMetadata().getModel()
+                            : "unknown";
+                    return com.llm.gateway.llm_gateway.embed.EmbeddingResponse.builder()
+                        .provider("openai")
+                        .model(model)
+                        .embedding(vec)
+                        .dimensions(raw.length)
+                        .requestId(cid)
+                        .timestamp(System.currentTimeMillis())
+                        .build();
+                  })
+              .subscribeOn(Schedulers.boundedElastic())
+              .timeout(Duration.ofSeconds(30))
+              .flatMap(resp ->
+                  ServerResponse.ok()
+                      .contentType(MediaType.APPLICATION_JSON)
+                      .header("X-Request-ID", cid)
+                      .bodyValue(resp));
+        })
+        .onErrorResume(ex -> {
+          log.error("HANDLER | embed failed | cid={} | {}", cid, ex.getMessage());
+          return ServerResponse.status(502)
+              .contentType(MediaType.APPLICATION_JSON)
+              .bodyValue(
+                  com.llm.gateway.llm_gateway.embed.EmbeddingResponse.builder()
+                      .error(ex.getMessage())
+                      .requestId(cid)
+                      .timestamp(System.currentTimeMillis())
+                      .build());
+        });
   }
 }

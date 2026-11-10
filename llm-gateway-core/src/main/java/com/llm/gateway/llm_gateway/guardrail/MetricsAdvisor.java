@@ -56,11 +56,10 @@ public class MetricsAdvisor implements CallAdvisor, StreamAdvisor {
     recordPromptLength(provider, AdvisorUtils.extractUserText(request));
     return chain
         .nextStream(request)
-        .doOnComplete(
-            () -> {
-              metricsService.recordRequest(provider, false);
-              metricsService.recordLatency(provider, System.currentTimeMillis() - start);
-            })
+        .doOnComplete(() -> {
+          metricsService.recordRequest(provider, false);
+          metricsService.recordLatency(provider, System.currentTimeMillis() - start);
+        })
         .doOnError(ex -> metricsService.recordError(provider, ex.getClass().getSimpleName()));
   }
 

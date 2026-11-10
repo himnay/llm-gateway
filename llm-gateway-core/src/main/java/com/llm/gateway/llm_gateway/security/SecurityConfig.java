@@ -59,33 +59,30 @@ public class SecurityConfig {
 
     log.info("SECURITY | OAuth2 (Keycloak) JWT authentication is ENABLED");
 
-    return http.oauth2ResourceServer(
-            oauth2 ->
-                oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(reactiveKeycloakJwtConverter())))
-        .authorizeExchange(
-            a ->
-                a
-                    // Matchers see the path inside spring.webflux.base-path (/llm/v1), so
-                    // "/providers" matches /llm/v1/providers.
-                    // Read-only infrastructure is public (probes, Prometheus scraping); loggers,
-                    // env and circuitbreakers need a token — loggers accepts POSTs that change
-                    // log levels.
-                    .pathMatchers(
-                        "/actuator/health/**",
-                        "/actuator/info",
-                        "/actuator/metrics/**",
-                        "/actuator/prometheus")
-                    .permitAll()
-                    // Public gateway info endpoints
-                    .pathMatchers("/health", "/providers", "/models")
-                    .permitAll()
-                    // Swagger UI / OpenAPI docs are public
-                    .pathMatchers(
-                        "/swagger-ui.html", "/swagger-ui/**", "/webjars/**", "/api-docs/**")
-                    .permitAll()
-                    // Everything else requires a valid Keycloak-issued Bearer token
-                    .anyExchange()
-                    .authenticated())
+    return http.oauth2ResourceServer(oauth2 ->
+            oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(reactiveKeycloakJwtConverter())))
+        .authorizeExchange(a ->
+            a
+                // Matchers see the path inside spring.webflux.base-path (/llm/v1), so
+                // "/providers" matches /llm/v1/providers.
+                // Read-only infrastructure is public (probes, Prometheus scraping); loggers,
+                // env and circuitbreakers need a token — loggers accepts POSTs that change
+                // log levels.
+                .pathMatchers(
+                    "/actuator/health/**",
+                    "/actuator/info",
+                    "/actuator/metrics/**",
+                    "/actuator/prometheus")
+                .permitAll()
+                // Public gateway info endpoints
+                .pathMatchers("/health", "/providers", "/models")
+                .permitAll()
+                // Swagger UI / OpenAPI docs are public
+                .pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/webjars/**", "/api-docs/**")
+                .permitAll()
+                // Everything else requires a valid Keycloak-issued Bearer token
+                .anyExchange()
+                .authenticated())
         .build();
   }
 

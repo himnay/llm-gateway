@@ -36,15 +36,15 @@ public class RequestLogService {
     String promptHash = request.getPrompt() != null ? sha256(request.getPrompt()) : null;
     return db.sql(
             """
-                      INSERT INTO request_log
-                          (request_id, correlation_id, provider, model, client_id,
-                           prompt_hash, prompt_length, cache_hit, latency_ms,
-                           prompt_tokens, completion_tokens, total_tokens, error, sanitized)
-                      VALUES
-                          (:requestId, :correlationId, :provider, :model, :clientId,
-                           :promptHash, :promptLength, :cacheHit, :latencyMs,
-                           :promptTokens, :completionTokens, :totalTokens, :error, :sanitized)
-                      """)
+            INSERT INTO request_log
+                (request_id, correlation_id, provider, model, client_id,
+                 prompt_hash, prompt_length, cache_hit, latency_ms,
+                 prompt_tokens, completion_tokens, total_tokens, error, sanitized)
+            VALUES
+                (:requestId, :correlationId, :provider, :model, :clientId,
+                 :promptHash, :promptLength, :cacheHit, :latencyMs,
+                 :promptTokens, :completionTokens, :totalTokens, :error, :sanitized)
+            """)
         .bind("requestId", requestId)
         .bind("correlationId", response.getCorrelationId())
         .bind("provider", response.getProvider() != null ? response.getProvider() : "unknown")
@@ -60,14 +60,13 @@ public class RequestLogService {
         .bind("error", response.getError())
         .bind("sanitized", Boolean.TRUE.equals(response.getSanitized()))
         .then()
-        .onErrorResume(
-            e -> {
-              log.warn(
-                  "AUDIT | write error (non-fatal) | requestId={} | error={}",
-                  requestId,
-                  e.getMessage());
-              return Mono.empty();
-            });
+        .onErrorResume(e -> {
+          log.warn(
+              "AUDIT | write error (non-fatal) | requestId={} | error={}",
+              requestId,
+              e.getMessage());
+          return Mono.empty();
+        });
   }
 
   private static String sha256(String input) {

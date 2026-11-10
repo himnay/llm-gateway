@@ -39,17 +39,16 @@ public class SensitiveDataRedactor {
   public SensitiveDataRedactor(GuardrailPatternProperties properties) {
     properties
         .getSensitiveData()
-        .forEach(
-            (type, regex) -> {
-              try {
-                patterns.put(toPlaceholder(type), Pattern.compile(regex));
-              } catch (PatternSyntaxException ex) {
-                log.error(
-                    "GUARDRAIL | invalid sensitive-data regex skipped | type={} | error={}",
-                    type,
-                    ex.getMessage());
-              }
-            });
+        .forEach((type, regex) -> {
+          try {
+            patterns.put(toPlaceholder(type), Pattern.compile(regex));
+          } catch (PatternSyntaxException ex) {
+            log.error(
+                "GUARDRAIL | invalid sensitive-data regex skipped | type={} | error={}",
+                type,
+                ex.getMessage());
+          }
+        });
     log.info(
         "GUARDRAIL | sensitive-data redactor initialised with {} pattern(s): {}",
         patterns.size(),

@@ -83,41 +83,31 @@ public class RedisRateLimiterFilter implements WebFilter {
     return redis
         .opsForValue()
         .increment(key)
-        .flatMap(
-            count -> {
-              if (count == 1L) {
-                return redis.expire(key, Duration.ofSeconds(windowSeconds * 2)).thenReturn(count);
-              }
-              return Mono.just(count);
-            })
-        .flatMap(
-            count -> {
-              exchange
-                  .getResponse()
-                  .getHeaders()
-                  .set("X-RateLimit-Limit", String.valueOf(maxRequests));
-              exchange
-                  .getResponse()
-                  .getHeaders()
-                  .set("X-RateLimit-Remaining", String.valueOf(Math.max(0L, maxRequests - count)));
+        .flatMap(count -> {
+          if (count == 1L) {
+            return redis.expire(key, Duration.ofSeconds(windowSeconds * 2)).thenReturn(count);
+          }
+          return Mono.just(count);
+        })
+        .flatMap(count -> {
+          exchange.getResponse().getHeaders().set("X-RateLimit-Limit", String.valueOf(maxRequests));
+          exchange
+              .getResponse()
+              .getHeaders()
+              .set("X-RateLimit-Remaining", String.valueOf(Math.max(0L, maxRequests - count)));
 
-              if (count > maxRequests) {
-                log.warn(
-                    "RATE_LIMIT | Blocked | ip={} | count={}/{}", clientIp, count, maxRequests);
-                exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
-                exchange
-                    .getResponse()
-                    .getHeaders()
-                    .set("Retry-After", String.valueOf(windowSeconds));
-                return exchange.getResponse().setComplete();
-              }
-              return chain.filter(exchange);
-            })
-        .onErrorResume(
-            ex -> {
-              log.error("RATE_LIMIT | Redis error, allowing request | {}", ex.getMessage());
-              return chain.filter(exchange);
-            });
+          if (count > maxRequests) {
+            log.warn("RATE_LIMIT | Blocked | ip={} | count={}/{}", clientIp, count, maxRequests);
+            exchange.getResponse().setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
+            exchange.getResponse().getHeaders().set("Retry-After", String.valueOf(windowSeconds));
+            return exchange.getResponse().setComplete();
+          }
+          return chain.filter(exchange);
+        })
+        .onErrorResume(ex -> {
+          log.error("RATE_LIMIT | Redis error, allowing request | {}", ex.getMessage());
+          return chain.filter(exchange);
+        });
   }
 
   /**

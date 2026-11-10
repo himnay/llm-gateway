@@ -131,20 +131,19 @@ public class PromptCacheService {
     String model = effectiveModel(request);
     return semanticCache
         .findSimilarKey(provider, model, request.getPrompt())
-        .flatMap(
-            similarKey -> {
-              String value = redisTemplate.opsForValue().get(similarKey);
-              if (value == null) {
-                semanticCache.removeStale(provider, model, similarKey);
-                return Optional.empty();
-              }
-              try {
-                return Optional.of(objectMapper.readValue(value, LlmResponse.class));
-              } catch (Exception e) {
-                log.warn("CACHE | Semantic hit deserialization error | error={}", e.getMessage());
-                return Optional.empty();
-              }
-            });
+        .flatMap(similarKey -> {
+          String value = redisTemplate.opsForValue().get(similarKey);
+          if (value == null) {
+            semanticCache.removeStale(provider, model, similarKey);
+            return Optional.empty();
+          }
+          try {
+            return Optional.of(objectMapper.readValue(value, LlmResponse.class));
+          } catch (Exception e) {
+            log.warn("CACHE | Semantic hit deserialization error | error={}", e.getMessage());
+            return Optional.empty();
+          }
+        });
   }
 
   // ──────────────────────────────────────────────────────────────────────────

@@ -31,22 +31,20 @@ public class StartupValidator {
 
     providerProperties
         .getProviders()
-        .forEach(
-            (provider, config) -> {
-              if (!config.isEnabled()) return;
+        .forEach((provider, config) -> {
+          if (!config.isEnabled()) return;
 
-              String key = config.getApiKey();
-              if (!StringUtils.hasText(key)) {
-                warnings.add(
-                    String.format(
-                        "Provider '%s' is enabled but has no API key configured", provider));
-              } else if (key.startsWith(PLACEHOLDER_PREFIX)) {
-                warnings.add(
-                    String.format(
-                        "Provider '%s' is using a placeholder API key — real requests will fail",
-                        provider));
-              }
-            });
+          String key = config.getApiKey();
+          if (!StringUtils.hasText(key)) {
+            warnings.add(
+                String.format("Provider '%s' is enabled but has no API key configured", provider));
+          } else if (key.startsWith(PLACEHOLDER_PREFIX)) {
+            warnings.add(
+                String.format(
+                    "Provider '%s' is using a placeholder API key — real requests will fail",
+                    provider));
+          }
+        });
 
     if (!warnings.isEmpty()) {
       log.warn("=== STARTUP VALIDATION WARNINGS ===");

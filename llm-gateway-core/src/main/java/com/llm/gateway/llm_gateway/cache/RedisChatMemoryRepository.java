@@ -44,17 +44,15 @@ public class RedisChatMemoryRepository implements ChatMemoryRepository {
     List<String> ids = new ArrayList<>();
     ScanOptions opts = ScanOptions.scanOptions().match(KEY_PREFIX + "*").count(100).build();
     try {
-      redisTemplate.execute(
-          (RedisConnection conn) -> {
-            try (Cursor<byte[]> cursor = conn.keyCommands().scan(opts)) {
-              cursor.forEachRemaining(
-                  key -> {
-                    String keyStr = new String(key);
-                    ids.add(keyStr.substring(KEY_PREFIX.length()));
-                  });
-            }
-            return null;
+      redisTemplate.execute((RedisConnection conn) -> {
+        try (Cursor<byte[]> cursor = conn.keyCommands().scan(opts)) {
+          cursor.forEachRemaining(key -> {
+            String keyStr = new String(key);
+            ids.add(keyStr.substring(KEY_PREFIX.length()));
           });
+        }
+        return null;
+      });
     } catch (Exception e) {
       log.warn("CHAT_MEMORY | scan error | error={}", e.getMessage());
     }

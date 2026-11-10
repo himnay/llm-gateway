@@ -28,23 +28,20 @@ public class WebClientConfig {
    * the call proceeds without it.
    */
   private static ExchangeFilterFunction correlationIdFilter() {
-    return ExchangeFilterFunction.ofRequestProcessor(
-        request ->
-            Mono.deferContextual(
-                ctx -> {
-                  // Prefer MDC (set by CorrelationIdFilter for synchronous access);
-                  // fall back to the Reactor context for async callers.
-                  String requestId = MDC.get(CorrelationIdFilter.ATTR_KEY);
-                  if (requestId == null || requestId.isBlank()) {
-                    requestId = ctx.getOrDefault(CorrelationIdFilter.CONTEXT_KEY, null);
-                  }
-                  if (requestId != null && !requestId.isBlank()) {
-                    final String id = requestId;
-                    return Mono.just(
-                        ClientRequest.from(request).header("X-Correlation-ID", id).build());
-                  }
-                  return Mono.just(request);
-                }));
+    return ExchangeFilterFunction.ofRequestProcessor(request ->
+        Mono.deferContextual(ctx -> {
+          // Prefer MDC (set by CorrelationIdFilter for synchronous access);
+          // fall back to the Reactor context for async callers.
+          String requestId = MDC.get(CorrelationIdFilter.ATTR_KEY);
+          if (requestId == null || requestId.isBlank()) {
+            requestId = ctx.getOrDefault(CorrelationIdFilter.CONTEXT_KEY, null);
+          }
+          if (requestId != null && !requestId.isBlank()) {
+            final String id = requestId;
+            return Mono.just(ClientRequest.from(request).header("X-Correlation-ID", id).build());
+          }
+          return Mono.just(request);
+        }));
   }
 
   /** Defines the web client bean. */
@@ -55,10 +52,9 @@ public class WebClientConfig {
             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)
             .option(ChannelOption.SO_KEEPALIVE, true)
             .responseTimeout(java.time.Duration.ofSeconds(60))
-            .doOnConnected(
-                conn ->
-                    conn.addHandlerLast(new ReadTimeoutHandler(60, TimeUnit.SECONDS))
-                        .addHandlerLast(new WriteTimeoutHandler(60, TimeUnit.SECONDS)));
+            .doOnConnected(conn ->
+                conn.addHandlerLast(new ReadTimeoutHandler(60, TimeUnit.SECONDS))
+                    .addHandlerLast(new WriteTimeoutHandler(60, TimeUnit.SECONDS)));
 
     return WebClient.builder()
         .clientConnector(new ReactorClientHttpConnector(httpClient))

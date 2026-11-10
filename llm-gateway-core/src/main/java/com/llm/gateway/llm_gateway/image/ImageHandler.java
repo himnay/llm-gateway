@@ -33,42 +33,39 @@ public class ImageHandler {
   public Mono<ServerResponse> generate(ServerRequest req) {
     String cid = correlationId(req);
     return req.bodyToMono(ImageGenerationRequest.class)
-        .flatMap(
-            request -> {
-              if (request.getPrompt() == null || request.getPrompt().isBlank()) {
-                return ServerResponse.badRequest()
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(
-                        ImageGenerationResponse.builder()
-                            .error("prompt is required")
-                            .correlationId(cid)
-                            .timestamp(System.currentTimeMillis())
-                            .build());
-              }
-              request.setCorrelationId(cid);
-              log.info("HANDLER | image | model={} | cid={}", request.getModel(), cid);
-              return Mono.fromCallable(() -> imageService.generate(request))
-                  .subscribeOn(Schedulers.boundedElastic())
-                  .timeout(Duration.ofSeconds(timeoutSeconds))
-                  .flatMap(
-                      resp ->
-                          ServerResponse.ok()
-                              .contentType(MediaType.APPLICATION_JSON)
-                              .header("X-Request-ID", cid)
-                              .bodyValue(resp));
-            })
-        .onErrorResume(
-            ex -> {
-              log.error("HANDLER | image failed | cid={} | error={}", cid, ex.getMessage());
-              return ServerResponse.status(502)
-                  .contentType(MediaType.APPLICATION_JSON)
-                  .bodyValue(
-                      ImageGenerationResponse.builder()
-                          .error(ex.getMessage())
-                          .correlationId(cid)
-                          .timestamp(System.currentTimeMillis())
-                          .build());
-            });
+        .flatMap(request -> {
+          if (request.getPrompt() == null || request.getPrompt().isBlank()) {
+            return ServerResponse.badRequest()
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(
+                    ImageGenerationResponse.builder()
+                        .error("prompt is required")
+                        .correlationId(cid)
+                        .timestamp(System.currentTimeMillis())
+                        .build());
+          }
+          request.setCorrelationId(cid);
+          log.info("HANDLER | image | model={} | cid={}", request.getModel(), cid);
+          return Mono.fromCallable(() -> imageService.generate(request))
+              .subscribeOn(Schedulers.boundedElastic())
+              .timeout(Duration.ofSeconds(timeoutSeconds))
+              .flatMap(resp ->
+                  ServerResponse.ok()
+                      .contentType(MediaType.APPLICATION_JSON)
+                      .header("X-Request-ID", cid)
+                      .bodyValue(resp));
+        })
+        .onErrorResume(ex -> {
+          log.error("HANDLER | image failed | cid={} | error={}", cid, ex.getMessage());
+          return ServerResponse.status(502)
+              .contentType(MediaType.APPLICATION_JSON)
+              .bodyValue(
+                  ImageGenerationResponse.builder()
+                      .error(ex.getMessage())
+                      .correlationId(cid)
+                      .timestamp(System.currentTimeMillis())
+                      .build());
+        });
   }
 
   private String correlationId(ServerRequest req) {

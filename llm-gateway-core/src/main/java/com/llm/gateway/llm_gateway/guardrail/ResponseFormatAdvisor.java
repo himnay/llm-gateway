@@ -104,17 +104,14 @@ public class ResponseFormatAdvisor implements BaseAdvisor {
     REFUSAL_PATTERNS.stream()
         .filter(lower::startsWith)
         .findFirst()
-        .ifPresent(
-            p -> {
-              log.warn("GUARDRAIL | REFUSAL_DETECTED | provider={} | pattern={}", provider, p);
-              metricsService.recordError(provider, "RESPONSE_REFUSAL");
-            });
+        .ifPresent(p -> {
+          log.warn("GUARDRAIL | REFUSAL_DETECTED | provider={} | pattern={}", provider, p);
+          metricsService.recordError(provider, "RESPONSE_REFUSAL");
+        });
     TRUNCATION_SIGNALS.stream()
         .filter(s -> lower.endsWith(s.toLowerCase()))
         .findFirst()
-        .ifPresent(
-            s ->
-                log.warn(
-                    "GUARDRAIL | TRUNCATION_SUSPECTED | provider={} | signal={}", provider, s));
+        .ifPresent(s ->
+            log.warn("GUARDRAIL | TRUNCATION_SUSPECTED | provider={} | signal={}", provider, s));
   }
 }

@@ -57,13 +57,12 @@ public class RemoteGuardrailClient {
             .post()
             .uri(properties.getBaseUrl() + "/guardrails/invoke")
             .contentType(MediaType.APPLICATION_JSON)
-            .headers(
-                headers -> {
-                  String traceparent = buildTraceparent();
-                  if (traceparent != null) {
-                    headers.set("traceparent", traceparent);
-                  }
-                })
+            .headers(headers -> {
+              String traceparent = buildTraceparent();
+              if (traceparent != null) {
+                headers.set("traceparent", traceparent);
+              }
+            })
             .bodyValue(Map.of("input", Map.of("text", text, "stage", stage)))
             .retrieve()
             .bodyToMono(String.class)
